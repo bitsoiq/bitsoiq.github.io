@@ -6916,10 +6916,14 @@ cloudPull().then(ch=>{ if(ch) cloudAdminRerender(); });
 (function(){
   var KEY='HOLAMUCHACHOS', LS='bitsoiq_console_ok';
   var g=document.getElementById('iq-gate');
-  try{ if(localStorage.getItem(LS)===KEY){ g.remove(); return; } }catch(e){}
+  function unlock(){
+    try{ if(!state.access){ state.access = true; saveState(); boot(); } }catch(e){}
+    g.remove();
+  }
+  try{ if(localStorage.getItem(LS)===KEY){ unlock(); return; } }catch(e){}
   var inp=document.getElementById('iq-gate-in'), err=document.getElementById('iq-gate-err');
   function go(){
-    if((inp.value||'').trim().toUpperCase()===KEY){ try{ localStorage.setItem(LS,KEY); }catch(e){} g.remove(); }
+    if((inp.value||'').trim().toUpperCase()===KEY){ try{ localStorage.setItem(LS,KEY); }catch(e){} unlock(); }
     else{ err.textContent='Nope — that is not it.'; inp.value='';
       g.animate([{transform:'translateX(0)'},{transform:'translateX(-12px)'},{transform:'translateX(12px)'},{transform:'translateX(0)'}],{duration:240}); }
   }
