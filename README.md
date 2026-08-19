@@ -1,1 +1,1 @@
-# bitsoiq.github.io
+# bitsoiq.github.io/hq
