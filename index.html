@@ -42,8 +42,8 @@ body{
 body::before{
   content:''; position:fixed; inset:0; z-index:-2; pointer-events:none;
   background-image:
-    linear-gradient(rgba(225,254,56,.09) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(225,254,56,.09) 1px, transparent 1px);
+    linear-gradient(rgba(225,254,56,.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(225,254,56,.055) 1px, transparent 1px);
   background-size:46px 46px;
   mask-image:radial-gradient(80% 70% at 50% 40%, rgba(0,0,0,.8), transparent 100%);
   -webkit-mask-image:radial-gradient(80% 70% at 50% 40%, rgba(0,0,0,.8), transparent 100%);
@@ -51,14 +51,14 @@ body::before{
 body::after{
   content:''; position:fixed; z-index:-1; pointer-events:none;
   width:68vw; height:68vw; left:-16vw; top:-20vh; border-radius:50%;
-  background:radial-gradient(closest-side, rgba(225,254,56,.33), transparent 72%);
+  background:radial-gradient(closest-side, rgba(225,254,56,.20), transparent 72%);
   filter:blur(46px);
   animation:bgdrift 18s ease-in-out infinite alternate;
 }
 html::after{
   content:''; position:fixed; z-index:-1; pointer-events:none;
   width:46vw; height:46vw; right:-16vw; bottom:-18vh; border-radius:50%;
-  background:radial-gradient(closest-side, rgba(31,170,89,.26), transparent 72%);
+  background:radial-gradient(closest-side, rgba(31,170,89,.16), transparent 72%);
   filter:blur(38px);
   animation:bgdrift2 22s ease-in-out infinite alternate;
 }
@@ -70,7 +70,7 @@ html::after{
 #bgfx3{
   position:fixed; z-index:-1; pointer-events:none;
   width:36vw; height:36vw; left:38vw; top:52vh; border-radius:50%;
-  background:radial-gradient(closest-side, rgba(255,157,46,.18), transparent 72%);
+  background:radial-gradient(closest-side, rgba(255,157,46,.12), transparent 72%);
   filter:blur(40px);
   animation:bgdrift3 26s ease-in-out infinite alternate;
 }
@@ -515,6 +515,10 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 .bfx-drop{position:absolute; top:-34px; font-size:22px; opacity:.5; animation:bfxdrop 4.6s linear infinite; pointer-events:none}
 @keyframes bfxdrop{0%{transform:translateY(0) rotate(-8deg)}100%{transform:translateY(240px) rotate(10deg)}}
 .bfx-rise{position:absolute; bottom:-34px; font-size:22px; opacity:.5; animation:bfxrise 4.2s linear infinite; pointer-events:none}
+.boostcard.dh{background:linear-gradient(270deg,#7CD5FF,#B39DFF,#7CF2E0,#7CD5FF); background-size:400% 100%}
+.boostcard.dh .bnum{background:linear-gradient(90deg,#7CD5FF,#B39DFF,#7CF2E0,#7CD5FF); background-size:250% 100%; -webkit-background-clip:text; background-clip:text}
+.boostcard.allin2{background:linear-gradient(270deg,#FF9D2E,#FF4FA0,#FFD449,#FF9D2E); background-size:400% 100%}
+.boostcard.allin2 .bnum{background:linear-gradient(90deg,#FF9D2E,#FF4FA0,#FFD449,#FF9D2E); background-size:250% 100%; -webkit-background-clip:text; background-clip:text}
 @keyframes bfxrise{0%{transform:translateY(0) rotate(4deg)}100%{transform:translateY(-240px) rotate(-8deg)}}
 @keyframes evflow{from{background-position:0% 50%}to{background-position:300% 50%}}
 .sysmsg{align-self:center; text-align:center; font-weight:800; font-size:12.5px; color:var(--neon); background:rgba(225,254,56,.07); border:1.5px dashed rgba(225,254,56,.4); border-radius:12px; padding:8px 14px; max-width:92%}
@@ -813,7 +817,10 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 .abar .tname{font-weight:900; font-size:19px; letter-spacing:-.4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .abar .spacer{margin-left:auto}
 .cdpill{font-variant-numeric:tabular-nums}
-.arena-grid{display:grid; grid-template-columns:7fr 5fr; gap:22px; align-items:start}
+.arena-grid{display:grid; grid-template-columns:7fr 5fr; gap:22px; align-items:stretch}
+#ar-right{display:flex; flex-direction:column}
+#ar-right > .card:first-child{flex:1; display:flex; flex-direction:column}
+#ar-right > .card:first-child .feed{flex:1}
 @media(max-width:980px){ .arena-grid{grid-template-columns:1fr} }
 
 .daytag{text-align:center; margin:6px 0 18px}
@@ -6435,16 +6442,7 @@ function renderTodayCard(t){
   const rows = dayRows(t, tKey(t));
   const mine = rows.find(r=> r.name===player.name);
   const best = rows[0];
-  const ev = dayEvent(t, tKey(t));
-  const allinToday = player.allin && player.allin[t.id]===tKey(t);
-  const _ED = t.evDef || {};
-  const _dhSt = (_ED.dhOn !== false) ? iqStreakBefore(t, player.name, tKey(t)) : 0;
-  const dhBanner = (_ED.dhOn !== false && _dhSt >= (_ED.dhreq||3))
-    ? `<div class="evbanner" style="background:linear-gradient(270deg,#7CD5FF,#B39DFF,#7CF2E0,#7CD5FF); background-size:300% 100%">💎 DIAMOND HANDS — your ${_dhSt}-day streak earns +${_ED.dhv||50}% today</div>` : '';
   box.innerHTML = `
-    ${ev ? `<div class="evbanner">${evLabel(ev)}</div>` : ''}
-    ${dhBanner}
-    ${allinToday ? `<div class="evbanner allin">🃏 ALL-IN ACTIVE — your points count ×${(t.evDef && t.evDef.allin) || 2} today</div>` : ''}
     <div class="gherocard">
       <div class="ghero-art" style="background:${g.grad}">${ICONS[g.id]}
         <div class="cdtag">⌛ <span class="cdv">--:--:--</span></div>
@@ -6500,23 +6498,44 @@ function tabsHTML(cur){
   </div>`;
 }
 function boostWidget(t){
+  const out = [];
   const e = dayEvent(t, tKey(t));
-  if(!e) return '';
-  const air = e.k === 'air';
-  const name = air ? '🪂 AIRDROP DAY' : '🚀 TO THE MOON';
-  const num = air ? '+' + (e.v||25) + ' pts' : '+' + (e.v||200) + '%';
-  const sub = air ? 'bonus for everyone who plays & nails today’s question'
-                  : 'every point you earn today is multiplied — final push!';
-  const fx = air
-    ? [0,1,2,3].map(i=> `<span class="bfx-drop" style="left:${12 + i*24}%; animation-delay:${(i*1.1).toFixed(1)}s">🪂</span>`).join('')
-    : [0,1,2].map(i=> `<span class="bfx-rise" style="left:${16 + i*30}%; animation-delay:${(i*1.4).toFixed(1)}s">🚀</span>`).join('') + '<span class="bfx-rise" style="left:78%; animation-delay:.6s">✨</span>';
-  return `<div class="boostcard"><div class="in big">
-    ${fx}
-    <div class="bk">⚡ BOOSTER TODAY</div>
-    <div class="bhead">${name}</div>
-    <div class="bnum">${num}</div>
-    <div class="bsub">${sub}</div>
-  </div></div>`;
+  if(e){
+    const air = e.k === 'air';
+    const name = air ? '🪂 AIRDROP DAY' : '🚀 TO THE MOON';
+    const num = air ? '+' + (e.v||25) + ' pts' : '+' + (e.v||200) + '%';
+    const sub = air ? 'bonus for everyone who plays & nails today’s question'
+                    : 'every point you earn today is multiplied — final push!';
+    const fx = air
+      ? [0,1,2,3].map(i=> `<span class="bfx-drop" style="left:${12 + i*24}%; animation-delay:${(i*1.1).toFixed(1)}s">🪂</span>`).join('')
+      : [0,1,2].map(i=> `<span class="bfx-rise" style="left:${16 + i*30}%; animation-delay:${(i*1.4).toFixed(1)}s">🚀</span>`).join('') + '<span class="bfx-rise" style="left:78%; animation-delay:.6s">✨</span>';
+    out.push(`<div class="boostcard"><div class="in big">
+      ${fx}
+      <div class="bk">⚡ BOOSTER TODAY</div>
+      <div class="bhead">${name}</div>
+      <div class="bnum">${num}</div>
+      <div class="bsub">${sub}</div>
+    </div></div>`);
+  }
+  const ED = t.evDef || {};
+  if(ED.dhOn !== false){
+    const st = iqStreakBefore(t, player.name, tKey(t));
+    if(st >= (ED.dhreq||3)){
+      out.push(`<div class="boostcard dh"><div class="in big" style="padding:16px 18px 14px">
+        <div class="bk" style="color:#7CD5FF">💎 DIAMOND HANDS</div>
+        <div class="bnum" style="font-size:36px">+${ED.dhv||50}%</div>
+        <div class="bsub">your ${st}-day streak pays extra today — keep it alive 🔥</div>
+      </div></div>`);
+    }
+  }
+  if(player.allin && player.allin[t.id] === tKey(t)){
+    out.push(`<div class="boostcard allin2"><div class="in big" style="padding:16px 18px 14px">
+      <div class="bk" style="color:#FF9D2E">🃏 ALL-IN ACTIVE</div>
+      <div class="bnum" style="font-size:36px">×${ED.allin || 2}</div>
+      <div class="bsub">your points multiply today — you chose violence 😤</div>
+    </div></div>`);
+  }
+  return out.join('');
 }
 function renderSide(t){
   const box = $('#ar-right');
