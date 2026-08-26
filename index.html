@@ -493,6 +493,7 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 .trivia-opts button.ok{background:var(--greenbg); border-color:var(--green); color:var(--green)}
 .trivia-opts button.bad{background:var(--redbg); border-color:var(--red); color:#FF8FA0}
 .qtag{font-size:11px; font-weight:900; letter-spacing:2px; color:var(--neon); text-transform:uppercase; margin-bottom:10px}
+.madewith{text-align:center; color:var(--ink3); font-weight:700; font-size:12.5px; padding:30px 0 36px}
 .playrow{gap:12px; flex-wrap:wrap}
 .playrow .btn{flex:1 1 0; min-width:150px; text-align:center; padding-left:10px; padding-right:10px; white-space:nowrap}
 .playrow .pill{align-self:center; flex:1; text-align:center}
@@ -823,9 +824,16 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 .abar .spacer{margin-left:auto}
 .cdpill{font-variant-numeric:tabular-nums}
 .arena-grid{display:grid; grid-template-columns:7fr 5fr; gap:22px; align-items:stretch}
-#ar-right{display:flex; flex-direction:column}
-#ar-right > .card:first-child{flex:1; display:flex; flex-direction:column; min-height:280px}
-#ar-right > .card:first-child .feed{flex:1}
+#ar-right{position:relative; min-height:460px}
+#ar-right .rwrap{position:absolute; inset:0; overflow-y:auto; display:flex; flex-direction:column; padding-right:2px; scrollbar-width:thin; scrollbar-color:var(--line) transparent}
+#ar-right .rwrap::-webkit-scrollbar{width:8px}
+#ar-right .rwrap::-webkit-scrollbar-thumb{background:var(--line); border-radius:99px}
+#ar-right .rwrap > .card:first-child{flex:1; display:flex; flex-direction:column; min-height:300px}
+#ar-right .rwrap > .card:first-child .feed{flex:1}
+@media(max-width:980px){
+  #ar-right{position:static; min-height:0}
+  #ar-right .rwrap{position:static; overflow:visible}
+}
 @media(max-width:980px){ .arena-grid{grid-template-columns:1fr} }
 
 .daytag{text-align:center; margin:6px 0 18px}
@@ -978,6 +986,7 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
   <main class="pmain">
     <div class="sec-title">Your tournaments <span class="pill dim" id="home-count"></span></div>
     <div id="home-grid" class="tgrid"></div>
+    <div class="madewith">Made with 🩵 for Bitso — BitsoIQ</div>
   </main>
 </div>
 
@@ -1007,6 +1016,7 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
       <div id="ar-left"></div>
       <div id="ar-right"></div>
     </div>
+    <div class="madewith">Made with 🩵 for Bitso — BitsoIQ</div>
   </main>
 </div>
 
@@ -6563,7 +6573,7 @@ function renderSide(t){
   const box = $('#ar-right');
   const typed = $('#chat2-in') ? $('#chat2-in').value : '';
   if(arenaTab==='chat'){
-    box.innerHTML = `<div class="card">
+    box.innerHTML = `<div class="rwrap"><div class="card">
       ${tabsHTML('chat')}
       <div class="feed" id="chat2-feed">${feedHTML(t)}</div>
       <div class="feed-in">
@@ -6572,15 +6582,15 @@ function renderSide(t){
         <button class="btn sm" onclick="sendMsg()">Send</button>
       </div>
       <div id="gif-picker" class="hidden">${GIF_SET.map((g,i)=>`<button onclick="sendGif(${i})" title="${esc(g.l)}"><span class="fgif ${g.a}" style="font-size:30px">${g.e}</span><span class="gl">${esc(g.l)}</span></button>`).join('')}</div>
-    </div>` + boostWidget(t);
+    </div>` + boostWidget(t) + `</div>`;
     const inp = $('#chat2-in'); if(inp) inp.value = typed;
     const f = $('#chat2-feed'); if(f) f.scrollTop = f.scrollHeight;
   } else if(arenaTab==='points'){
-    box.innerHTML = `<div class="card">${tabsHTML('points')}${pointsHTML(t)}</div>`;
+    box.innerHTML = `<div class="rwrap"><div class="card">${tabsHTML('points')}${pointsHTML(t)}</div></div>`;
   } else if(arenaTab==='study'){
-    box.innerHTML = `<div class="card">${tabsHTML('study')}${iqStudyHTML(t)}</div>`;
+    box.innerHTML = `<div class="rwrap"><div class="card">${tabsHTML('study')}${iqStudyHTML(t)}</div></div>`;
   } else {
-    box.innerHTML = `<div class="card">${tabsHTML('jokes')}${jokesHTML()}</div>`;
+    box.innerHTML = `<div class="rwrap"><div class="card">${tabsHTML('jokes')}${jokesHTML()}</div></div>`;
   }
 }
 function fmtDate2(ts){ return new Date(ts).toLocaleDateString('en-US',{month:'short', day:'numeric'}); }
@@ -6654,43 +6664,52 @@ function sendGif(i){
   refreshFeed(); sGood();
 }
 function toggleGifPicker(){ const p = $('#gif-picker'); if(p) p.classList.toggle('hidden'); }
+let pointsView = 'today';
+function setPointsView(v){ pointsView = v; const t = curT(); if(t) renderSide(t); sTap(); }
 function pointsHTML(t){
-  const st = standings(t);
+  const nav = `<div class="tabs2" style="margin:2px 0 14px">
+    <button class="${pointsView==='today'?'on':''}" onclick="setPointsView('today')">📊 Today</button>
+    <button class="${pointsView==='overall'?'on':''}" onclick="setPointsView('overall')">🏆 Overall standings</button>
+  </div>`;
+  return nav + (pointsView === 'today' ? pointsTodayHTML(t) : pointsOverallHTML(t));
+}
+function pointsTodayHTML(t){
   const rows = dayRows(t, tKey(t));
   const day = (t.days||[]).find(d=> d.date===tKey(t));
   const g = day && day.gameId ? gameById(day.gameId) : null;
-  let html = '';
-  if(g){
-    html += `<h3 style="margin-bottom:4px">📊 Today — ${esc(g.name)}</h3>`;
-    html += rows.length ? rows.map(r=>`
-      <div class="lb-row ${r.name===player.name?'me':''}">
-        <div class="rk">${r.rank}</div>
-        <span class="av ${r.rank===1?'crowned':''}">${avatarHTML(r.avatar)}</span>
-        <div><div>${esc(r.name)}${r.name===player.name?' (you)':''}${iqBadge(t, r.name)}</div><div class="sub">${g.fmt(r.value)}${r.tags && r.tags.length ? ' · ' + r.tags.join(' · ') : ''}</div></div>
-        <div class="pts">+${r.pts} pts</div>
-      </div>`).join('')
-      : `<div class="empty" style="padding:20px"><div class="big">🕹</div>Nobody's on the board yet — go first.</div>`;
-  }
-  html += `<h3 style="margin:22px 0 4px">🏆 Overall standings <span class="pill dim">1st of N takes N pts · ties share</span></h3>`;
+  if(!g) return `<div class="empty" style="padding:26px"><div class="big">😴</div>Rest day — no game today.</div>`;
+  let html = `<h3 style="margin-bottom:4px">📊 Today — ${esc(g.name)}</h3>`;
+  html += rows.length ? rows.map(r=>`
+    <div class="lb-row ${r.name===player.name?'me':''}">
+      <div class="rk">${r.rank}</div>
+      <span class="av ${r.rank===1?'crowned':''}">${avatarHTML(r.avatar)}</span>
+      <div><div>${esc(r.name)}${r.name===player.name?' (you)':''}${iqBadge(t, r.name)}</div><div class="sub">${g.fmt(r.value)}${r.tags && r.tags.length ? ' · ' + r.tags.join(' · ') : ''}</div></div>
+      <div class="pts">+${r.pts} pts</div>
+    </div>`).join('')
+    : `<div class="empty" style="padding:20px"><div class="big">🕹</div>Nobody's on the board yet — go first.</div>`;
+  return html;
+}
+function pointsOverallHTML(t){
+  const st = standings(t);
+  let html = `<h3 style="margin-bottom:4px">🏆 Overall standings <span class="pill dim">1st of N takes 100 · last takes 10+</span></h3>`;
   if(!st.length){
-    html += `<div class="empty" style="padding:30px"><div class="big">🏟</div>The board is empty — validated runs will start filling it.</div>`;
-  } else {
-    const slots = [[1,'p2','🥈'],[0,'p1','🥇'],[2,'p3','🥉']];
-    html += `<div class="podium">${slots.map(([i,cls,med])=>{
-      const s = st[i]; if(!s) return '';
-      return `<div class="pcol ${cls}"><div class="pav ${cls==='p1'?'crowned':''}">${avatarHTML(s.avatar)}</div><div class="pn">${esc(s.name)}</div><div class="pp">${s.pts} pts · ${s.days} day${s.days===1?'':'s'}</div><div class="pbar">${med}</div></div>`;
-    }).join('')}</div>`;
-    let rank = 0;
-    html += st.map((s,i)=>{
-      if(i===0 || s.pts !== st[i-1].pts) rank = i+1;
-      return `<div class="lb-row ${s.name===player.name?'me':''}">
-        <div class="rk">${rank}</div>
-        <span class="av ${rank===1?'crowned':''}">${avatarHTML(s.avatar)}</span>
-        <div><div>${esc(s.name)}${s.name===player.name?' (you)':''}${iqBadge(t, s.name)}</div><div class="sub">${s.days} day${s.days===1?'':'s'} played</div></div>
-        <div class="pts">${s.pts} pts</div>
-      </div>`;
-    }).join('');
+    return html + `<div class="empty" style="padding:30px"><div class="big">🏟</div>The board is empty — validated runs will start filling it.</div>`;
   }
+  const slots = [[1,'p2','🥈'],[0,'p1','🥇'],[2,'p3','🥉']];
+  html += `<div class="podium">${slots.map(([i,cls,med])=>{
+    const s = st[i]; if(!s) return '';
+    return `<div class="pcol ${cls}"><div class="pav ${cls==='p1'?'crowned':''}">${avatarHTML(s.avatar)}</div><div class="pn">${esc(s.name)}</div><div class="pp">${s.pts} pts · ${s.days} day${s.days===1?'':'s'}</div><div class="pbar">${med}</div></div>`;
+  }).join('')}</div>`;
+  let rank = 0;
+  html += st.map((s,i)=>{
+    if(i===0 || s.pts !== st[i-1].pts) rank = i+1;
+    return `<div class="lb-row ${s.name===player.name?'me':''}">
+      <div class="rk">${rank}</div>
+      <span class="av ${rank===1?'crowned':''}">${avatarHTML(s.avatar)}</span>
+      <div><div>${esc(s.name)}${s.name===player.name?' (you)':''}${iqBadge(t, s.name)}</div><div class="sub">${s.days} day${s.days===1?'':'s'} played</div></div>
+      <div class="pts">${s.pts} pts</div>
+    </div>`;
+  }).join('');
   return html;
 }
 
