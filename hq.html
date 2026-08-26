@@ -6116,7 +6116,11 @@ function rulesHTML(){
 /* ============================================================
    SCORING ENGINE v2 — fixed 100→10 scale + day events + All-in
    ============================================================ */
-function basePts(rank, N){ return N <= 1 ? 100 : Math.round(10 + 90 * (N - rank) / (N - 1)); }
+function basePts(rank, N){
+  if(N <= 1) return 100;
+  const step = Math.min(15, 90 / (N - 1));   /* fair in small fields: nobody drops more than 15 pts per position */
+  return Math.max(10, Math.round(100 - step * (rank - 1)));
+}
 function dayEvent(t, date){ const d = (t && t.days || []).find(x=> x.date===date); return (d && d.ev && d.ev.k) ? d.ev : null; }
 function evLabel(ev){
   if(!ev) return '';
@@ -7596,6 +7600,7 @@ setInterval(async()=>{
 }, 5000);
 cloudPull().then(ch=>{ if(ch) cloudAdminRerender(); });
 </script>
+
 <div id="iq-gate" style="position:fixed;inset:0;z-index:99999;background:#14110E;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px">
   <div style="font-size:44px">🔐</div>
   <div style="font-weight:900;font-size:22px;color:#fff;letter-spacing:-.5px">BitsoIQ Console</div>
@@ -7630,5 +7635,5 @@ cloudPull().then(ch=>{ if(ch) cloudAdminRerender(); });
   setTimeout(function(){ inp.focus(); },150);
 })();
 </script>
-</body>
+</body></body>
 </html>
