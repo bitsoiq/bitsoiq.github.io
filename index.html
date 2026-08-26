@@ -493,6 +493,9 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 .trivia-opts button.ok{background:var(--greenbg); border-color:var(--green); color:var(--green)}
 .trivia-opts button.bad{background:var(--redbg); border-color:var(--red); color:#FF8FA0}
 .qtag{font-size:11px; font-weight:900; letter-spacing:2px; color:var(--neon); text-transform:uppercase; margin-bottom:10px}
+.playrow{gap:12px; flex-wrap:wrap}
+.playrow .btn{flex:1 1 0; min-width:150px; text-align:center; padding-left:10px; padding-right:10px; white-space:nowrap}
+.playrow .pill{align-self:center; flex:1; text-align:center}
 .btn.allinbtn{background:linear-gradient(180deg,#C89CFF,#9A5CFF); color:#fff; box-shadow:0 5px 0 #6B3FB8; border:none}
 .btn.allinbtn:active{transform:translateY(4px); box-shadow:0 1px 0 #6B3FB8}
 .stk{font-size:11px; font-weight:900; color:#FF9D2E; white-space:nowrap}
@@ -6485,7 +6488,7 @@ function renderTodayCard(t){
           : (d.real || d.realStarted)
             ? `<div class="mystat">Your run isn't on the board — the Bitso question got you. ${d.retried?'Tomorrow is a fresh game.':'A joke on stage can still save it. 🎤'}</div>`
             : `<div class="mystat">You haven't played today. One practice run if you want it, then <b>the real one counts</b>. 🔥</div>`}
-        <div class="gherorow" style="margin-top:18px">
+        <div class="gherorow playrow" style="margin-top:24px">
           ${!(d.real || d.realStarted)
             ? (d.w===0 ? `<button class="btn ghost" onclick='startPlay("warmup")'>🧪 Practice first (1 try)</button>` : `<span class="pill dim">🧪 practice used</span>`) +
               `<button class="btn big" onclick='startPlay("real")'>▶ PLAY FOR REAL</button>` +
