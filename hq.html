@@ -516,6 +516,11 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 .sysmsg .ftime{color:var(--ink3); font-size:10.5px; margin-left:6px}
 .evsel{margin-left:6px}
 .evnum{width:64px; border:2px solid var(--line); border-radius:9px; background:var(--bg2); color:var(--ink); font-weight:800; padding:5px 7px; font-size:13px}
+.jtc{display:inline-flex; align-items:center; gap:8px; font-weight:900; font-size:13px; padding:9px 14px; border-radius:12px; background:var(--card); border:2px solid var(--line); color:var(--ink2); box-shadow:0 3px 0 var(--edge); cursor:pointer; transition:all .12s}
+.jtc:hover{color:var(--ink)}
+.jtc.on{background:linear-gradient(180deg,#EFFF7C,var(--neon)); color:#1E1B16; border-color:var(--neon); box-shadow:0 3px 0 var(--neonsh)}
+.jtc .n{font-size:11px; background:rgba(0,0,0,.22); border-radius:999px; padding:2px 8px}
+.jtc.on .n{background:rgba(0,0,0,.14)}
 .dp-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:6px; text-align:center}
 .dp-grid i{font-style:normal; font-weight:900; font-size:10.5px; color:var(--ink3); letter-spacing:1px}
 .dp-d{padding:10px 0; border-radius:11px; background:var(--card2); border:2px solid var(--line); font-weight:800; font-size:13.5px; color:var(--ink)}
@@ -4554,7 +4559,7 @@ const GAMES = [
     const adiff = (a,b)=>{ const d = Math.abs(norm(a)-norm(b)); return Math.min(d, TAU-d); };
     let round = 1, score = 0, dead = false, raf = 0, lastT = performance.now(), t = 0;
     let rot = rand(0,TAU), omega = 1.5*V, knives = [], rimCoins = [], toThrow = 0;
-    let fly = null, flipT = 99, wobble = false, banner = '', bannerT = 0, flash = 0;
+    let fly = null, flipT = 99, wobble = false, banner = '', bannerT = 0, flash = 0, pattern = 'steady', drift = 0;
     function newRound(){
       knives = [];
       for(let i=0, k=randi(3,4); i<k; i++){
@@ -4569,10 +4574,14 @@ const GAMES = [
         rimCoins.push(a);
       }
       toThrow = 6 + round;
-      omega = (1.85 + (round-1)*0.36) * V * (Math.random()<.5 ? -1 : 1);
-      flipT = rand(1.7,3.4);
-      wobble = round>=3;
-      banner = 'ROUND '+round; bannerT = 1.3;
+      /* each round spins with a different personality — THAT is the difficulty */
+      const PATTERNS = ['steady','pulse','reverse','stopgo','drunk'];
+      const PLABEL = { steady:'STEADY SPIN', pulse:'PULSE', reverse:'REVERSALS', stopgo:'STOP & GO', drunk:'CHAOS MODE' };
+      pattern = round <= 5 ? PATTERNS[round-1] : PATTERNS[randi(1, PATTERNS.length-1)];
+      drift = 0;
+      omega = (1.7 + (round-1)*0.22) * V * (Math.random()<.5 ? -1 : 1);
+      flipT = (pattern==='reverse' || round >= 6) ? rand(1.4,3.0) : 99;
+      banner = 'ROUND '+round+' — '+PLABEL[pattern]; bannerT = 1.5;
     }
     newRound();
     function throwK(){ if(dead || fly) return; fly = { y: H-46 }; sTap(); }
@@ -4610,8 +4619,12 @@ const GAMES = [
       const dt = Math.min(0.05,(now-lastT)/1000); lastT = now; t += dt;
       if(!dead){
         flipT -= dt;
-        if(flipT<=0){ omega = -omega; flipT = rand(2.0,4.0); }
-        rot += (wobble ? omega*(0.45+0.55*Math.abs(Math.sin(t*1.4))) : omega)*dt;
+        if(flipT<=0){ omega = -omega; flipT = rand(1.4,3.0); }
+        let w = omega;
+        if(pattern==='pulse') w = omega * (0.3 + 0.9*Math.abs(Math.sin(t*1.8)));                       /* respira: lento…rápido…lento */
+        else if(pattern==='stopgo'){ const ph = t % 1.6; w = ph < 0.55 ? omega*0.1 : omega*1.5; }      /* frena casi en seco y arranca */
+        else if(pattern==='drunk'){ drift += (Math.random()-0.5)*4.5*dt; drift = clamp(drift,-1.3,1.3); w = omega*0.55 + drift*2.4; }  /* errático */
+        rot += w*dt;
         if(fly){
           fly.y -= 1250*dt;
           if(fly.y <= cy+R+2){ fly = null; land(); }
@@ -5929,13 +5942,13 @@ function renderJokes(){
   const inT = j => !jokesFilterT || j.tid === jokesFilterT || (!j.tid && jokesFilterT === '__none__');
   const pending = state.jokes.filter(j=>!j.done && inT(j)).sort(jokeSort);
   const done = state.jokes.filter(j=>j.done && inT(j)).sort((a,b)=>b.doneTs-a.doneTs);
-  let html = `<div style="display:flex; align-items:center; gap:10px; margin-bottom:16px">
-    <b style="font-size:13px; color:var(--ink3)">Tournament:</b>
-    <select class="tinput" style="width:auto" onchange="jokesFilterT=this.value; renderJokes()">
-      <option value="" ${!jokesFilterT?'selected':''}>All tournaments</option>
-      ${(state.tournaments||[]).map(t=>`<option value="${t.id}" ${jokesFilterT===t.id?'selected':''}>${esc(t.name)}</option>`).join('')}
-      <option value="__none__" ${jokesFilterT==='__none__'?'selected':''}>Untagged (old)</option>
-    </select>
+  const _jc = {};
+  (state.jokes||[]).forEach(j=>{ const k = j.tid || '__none__'; _jc[k] = (_jc[k]||0) + 1; });
+  const _chip = (val, label, count)=> `<button class="jtc ${jokesFilterT===val?'on':''}" onclick="jokesFilterT='${val}'; renderJokes()">${label} <span class="n">${count}</span></button>`;
+  let html = `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px">
+    ${_chip('', '🎤 All', (state.jokes||[]).length)}
+    ${(state.tournaments||[]).map(t=> _chip(t.id, esc(t.name), _jc[t.id]||0)).join('')}
+    ${_jc['__none__'] ? _chip('__none__', '🕰 Old — no tournament tag', _jc['__none__']) : ''}
   </div>`;
   if(!state.jokes.length){
     body.innerHTML = `<div class="empty"><div class="big">🎭</div>The stage is empty… for now.<br>
