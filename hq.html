@@ -516,6 +516,11 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 .sysmsg .ftime{color:var(--ink3); font-size:10.5px; margin-left:6px}
 .evsel{margin-left:6px}
 .evnum{width:64px; border:2px solid var(--line); border-radius:9px; background:var(--bg2); color:var(--ink); font-weight:800; padding:5px 7px; font-size:13px}
+.dp-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:6px; text-align:center}
+.dp-grid i{font-style:normal; font-weight:900; font-size:10.5px; color:var(--ink3); letter-spacing:1px}
+.dp-d{padding:10px 0; border-radius:11px; background:var(--card2); border:2px solid var(--line); font-weight:800; font-size:13.5px; color:var(--ink)}
+.dp-d:disabled{opacity:.25; cursor:default}
+.dp-d.on{background:var(--neon); color:#1E1B16; border-color:var(--neon); box-shadow:0 0 0 3px rgba(225,254,56,.2)}
 .qidx{flex:none; min-width:34px; text-align:center; font-weight:900; font-size:11px; color:var(--neon); background:rgba(225,254,56,.09); border:1.5px solid rgba(225,254,56,.3); border-radius:9px; padding:4px 2px}
 .qgrip{cursor:grab; color:var(--ink3); font-weight:900; letter-spacing:-2px; padding:0 2px; user-select:none}
 .qrow.dragging{opacity:.45; border-style:dashed}
@@ -1562,7 +1567,8 @@ async function cloudPull(){
         return t;
       });
       (state.tournaments||[]).forEach(t=>{ if(!byTid[t.id]) newTs.push(t); });
-      state.tournaments = newTs;
+      const _tomb = state.tomb || {};
+      state.tournaments = newTs.filter(x=> !(_tomb[x.id] && Date.now() - _tomb[x.id] < 600000));
       CLOUD.m.stamp = stamp;
       changed = true;
     }
@@ -2209,7 +2215,7 @@ const GAMES = [
 { id:'dice', name:'Dice Roll', tag:'Add the dice. Wrong = frozen.', dur:35,
   unit:'sums', lowerBetter:false, fmt:v=>v+' solved',
   grad:'linear-gradient(160deg,#12A278,#0A5C48)',
-  how:'Up to 4 dice appear — add them up and tap the right total, fast. A wrong answer freezes you for 2 seconds. Most correct sums in 20 seconds wins.',
+  how:'2 to 4 dice appear — add them up and tap the right total, fast. A wrong answer freezes you for 2 seconds. Most correct sums in 20 seconds wins.',
   run(stage, api){
     const arena = document.createElement('div'); arena.className='arena';
     arena.style.background='radial-gradient(720px 480px at 50% 20%, #12A278, #0A5C48 75%)';
@@ -2221,14 +2227,14 @@ const GAMES = [
       return `<div class="die3">${PIPS[v].map(p=>`<i class="pip" style="left:${p[0]-8.5}%; top:${p[1]-8.5}%"></i>`).join('')}</div>`;
     }
     function round(){
-      const n = randi(1,4);
+      const n = randi(2,4);                       /* never a single die */
       const vals = Array.from({length:n}, ()=> randi(1,6));
       sum = vals.reduce((a,b)=>a+b,0);
       $('#dr-d').innerHTML = vals.map(dieHTML).join('');
       const wrongs = new Set();
       let guard = 0;
       while(wrongs.size<3 && guard++<60){
-        const w = sum + randi(-3,3);
+        const w = sum + randi(-2,2);   /* closer traps */
         if(w!==sum && w>=n && w<=n*6) wrongs.add(w);
       }
       while(wrongs.size<3) wrongs.add(sum + wrongs.size + 1);
@@ -4551,7 +4557,7 @@ const GAMES = [
     let fly = null, flipT = 99, wobble = false, banner = '', bannerT = 0, flash = 0;
     function newRound(){
       knives = [];
-      for(let i=0, k=randi(2,3); i<k; i++){
+      for(let i=0, k=randi(3,4); i<k; i++){
         let a, guard = 0;
         do{ a = rand(0,TAU); }while(knives.some(q=> adiff(q,a)<0.5) && guard++<50);
         knives.push(a);
@@ -4562,10 +4568,10 @@ const GAMES = [
         do{ a = rand(0,TAU); }while((knives.some(q=> adiff(q,a)<0.45) || rimCoins.some(q=> adiff(q,a)<0.6)) && guard++<50);
         rimCoins.push(a);
       }
-      toThrow = 5 + round;
-      omega = (1.5 + (round-1)*0.28) * V * (Math.random()<.5 ? -1 : 1);
-      flipT = round>=2 ? rand(2.2,4.2) : 99;
-      wobble = round>=4;
+      toThrow = 6 + round;
+      omega = (1.85 + (round-1)*0.36) * V * (Math.random()<.5 ? -1 : 1);
+      flipT = rand(1.7,3.4);
+      wobble = round>=3;
       banner = 'ROUND '+round; bannerT = 1.3;
     }
     newRound();
@@ -4575,7 +4581,7 @@ const GAMES = [
     window.addEventListener('keydown', onKey);
     function land(){
       const a = norm(Math.PI/2 - rot);          /* disc-space angle at the bottom contact point */
-      if(knives.some(q=> adiff(q,a) < 0.17)){
+      if(knives.some(q=> adiff(q,a) < 0.20)){
         dead = true; flash = 1; sBad();
         api.finish(score, 800);
         return;
@@ -5879,8 +5885,9 @@ function showNoPoints(g){
    JOKES — auto-filled queue, heat-ranked by chances used
    ============================================================ */
 function addJoke(name, venue){
+  const _t = primaryTour();
   state.jokes.push({
-    id: uid(), name, ts: Date.now(),
+    id: uid(), name, ts: Date.now(), tid: _t ? _t.id : null,
     venue: venue || VENUES[state.jokes.length % VENUES.length],
     done:false, doneTs:null
   });
@@ -5916,11 +5923,20 @@ function jokeSort(a,b){
   const ca = state.chances[a.name]||0, cb = state.chances[b.name]||0;
   return cb-ca || a.ts-b.ts;
 }
+let jokesFilterT = '';
 function renderJokes(){
   const body = $('#jokes-body');
-  const pending = state.jokes.filter(j=>!j.done).sort(jokeSort);
-  const done = state.jokes.filter(j=>j.done).sort((a,b)=>b.doneTs-a.doneTs);
-  let html = '';
+  const inT = j => !jokesFilterT || j.tid === jokesFilterT || (!j.tid && jokesFilterT === '__none__');
+  const pending = state.jokes.filter(j=>!j.done && inT(j)).sort(jokeSort);
+  const done = state.jokes.filter(j=>j.done && inT(j)).sort((a,b)=>b.doneTs-a.doneTs);
+  let html = `<div style="display:flex; align-items:center; gap:10px; margin-bottom:16px">
+    <b style="font-size:13px; color:var(--ink3)">Tournament:</b>
+    <select class="tinput" style="width:auto" onchange="jokesFilterT=this.value; renderJokes()">
+      <option value="" ${!jokesFilterT?'selected':''}>All tournaments</option>
+      ${(state.tournaments||[]).map(t=>`<option value="${t.id}" ${jokesFilterT===t.id?'selected':''}>${esc(t.name)}</option>`).join('')}
+      <option value="__none__" ${jokesFilterT==='__none__'?'selected':''}>Untagged (old)</option>
+    </select>
+  </div>`;
   if(!state.jokes.length){
     body.innerHTML = `<div class="empty"><div class="big">🎭</div>The stage is empty… for now.<br>
     <span style="font-size:13px">Ask for a second chance on a game and you'll show up here automatically.</span></div>`;
@@ -6071,6 +6087,60 @@ function schedEventReq(tid, date, v){
   d.ev.req = clamp(Math.round(+v)||3, 2, 30);
   saveState(); renderTournament();
 }
+let dpMonth = null, dpSel = null;
+function openDayPicker(){
+  dpSel = new Set(((tc && tc.days) || []).filter(d=> d.gameId).map(d=> d.date));
+  dpMonth = (dpSel.size ? [...dpSel].sort()[0] : todayKey()).slice(0, 7);
+  modal(`
+    <div class="qtag">🗓 Pick your tournament days</div>
+    <p class="mt" style="font-size:13.5px">Tap days to add or remove them — cross months with the arrows. Skipped days become rest days automatically.</p>
+    <div id="dp-cal"></div>
+    <div class="mrow">
+      <button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn big" onclick="applyDayPicker()">Use these days</button>
+    </div>
+  `);
+  paintDP();
+}
+function paintDP(){
+  const el = $('#dp-cal'); if(!el) return;
+  const [Y, M] = dpMonth.split('-').map(Number);
+  const dim = new Date(Y, M, 0).getDate();
+  const off = (new Date(Y, M-1, 1).getDay() + 6) % 7;
+  const tk = todayKey();
+  let cells = '';
+  for(let i = 0; i < off; i++) cells += '<span></span>';
+  for(let d = 1; d <= dim; d++){
+    const key = dpMonth + '-' + String(d).padStart(2, '0');
+    cells += `<button class="dp-d ${dpSel.has(key)?'on':''}" ${key < tk ? 'disabled' : ''} onclick="dpToggle('${key}')">${d}</button>`;
+  }
+  const label = new Date(Y, M-1, 1).toLocaleDateString('en-US', { month:'long', year:'numeric' });
+  el.innerHTML = `
+    <div style="display:flex; align-items:center; justify-content:space-between; margin:16px 0 10px">
+      <button class="btn sm ghost" onclick="dpNav(-1)">←</button>
+      <b style="font-size:16px">${label}</b>
+      <button class="btn sm ghost" onclick="dpNav(1)">→</button>
+    </div>
+    <div class="dp-grid">${['M','T','W','T','F','S','S'].map(x=>`<i>${x}</i>`).join('')}${cells}</div>
+    <div style="font-weight:800; font-size:12.5px; color:var(--ink3); margin-top:12px">${dpSel.size} game day${dpSel.size===1?'':'s'} selected</div>`;
+}
+function dpNav(dir){
+  let [Y, M] = dpMonth.split('-').map(Number);
+  M += dir; if(M < 1){ M = 12; Y--; } if(M > 12){ M = 1; Y++; }
+  dpMonth = Y + '-' + String(M).padStart(2, '0');
+  paintDP();
+}
+function dpToggle(key){ if(dpSel.has(key)) dpSel.delete(key); else dpSel.add(key); paintDP(); }
+function applyDayPicker(){
+  if(!dpSel.size){ toast('Pick at least one day'); return; }
+  const dates = [...dpSel].sort();
+  const gs = enabledGames();
+  if(!gs.length){ toast('Enable at least one game in the roster'); return; }
+  tc.days = dates.map(date=> ({ date, gameId: gs[randi(0, gs.length-1)].id }));
+  closeModal();
+  renderTournament();
+  toast('🗓 ' + dates.length + ' game days set — shuffle or override any game below');
+}
 function daysListHTML(days, editable, tid, sh){
   return days.map(d=>{
     const g = d.gameId ? gameById(d.gameId) : null;
@@ -6177,9 +6247,12 @@ function dayRows(t, date){
     let mult = 1; const tags = [];
     if(ev && ev.k==='moon'){ mult *= 1 + (ev.v||200)/100; tags.push('🚀 +'+(ev.v||200)+'%'); }
     const ED = t.evDef || {};
-    if(ED.dhOn !== false){                                    /* Diamond Hands: automatic, every day */
-      const st = iqStreakBefore(t, r.name, date);
-      if(st >= (ED.dhreq||3)){ mult *= 1 + (ED.dhv||50)/100; tags.push('💎 +'+(ED.dhv||50)+'%'); }
+    if(ED.dhOn !== false){
+      /* milestone days only: the row exists = played & nailed it, so today counts in the streak */
+      const stT = iqStreakBefore(t, r.name, date) + 1;
+      const req = ED.dhreq || 3;
+      const hit = stT >= req && (ED.dhMode === 'once' ? stT === req : stT % req === 0);
+      if(hit){ mult *= 1 + (ED.dhv||50)/100; tags.push('💎 +'+(ED.dhv||50)+'%'); }
     }
     if(r.allin){ const am = ED.allin || 2; mult *= am; tags.push('🃏 ALL-IN ×'+am); }
     if(mult > 4) mult = 4;                                   /* sanity cap: +300% total */
@@ -6519,6 +6592,14 @@ function questionsTabHTML(t){
       <div class="mrow" style="justify-content:flex-start">
         <button class="btn" onclick="saveQuestion()">Add to bank</button>
       </div>
+      <div style="border-top:2px dashed var(--line); margin:22px 0 12px"></div>
+      <h3 style="font-size:15px">📥 Import questions from CSV</h3>
+      <p class="cardhint">Expected columns: <b>Question · Correct Answer · Wrong Option 1-3 · Answer Fact · Highlight Words · YOU MUST KNOW (Yes/No) · WHY IS THIS IMPORTANT · AN EXAMPLE · Frequency</b>. Title rows are fine — the header is detected automatically. After importing you can click any question to edit it or add images.</p>
+      <select id="csv-mode" class="tinput" style="width:auto">
+        <option value="append">Add to the current bank</option>
+        <option value="replace">Replace the whole bank</option>
+      </select>
+      <div style="margin-top:10px"><input type="file" accept=".csv,text/csv" onchange="importCSV(this)"></div>
     </div>
     <div class="card" style="min-width:0">
       <h3>🧠 ${esc(t.name)} — questions <span class="pill dim" id="qb-count"></span> <button class="btn sm ghost" style="margin-left:8px" onclick="qShuffle()">🔀 Shuffle order</button></h3>
@@ -6554,6 +6635,7 @@ function evDefSet(tid, k, v){
   const t = (state.tournaments||[]).find(x=>x.id===tid); if(!t) return;
   const D = evDef(t);
   if(k === 'dhOn') D.dhOn = !!+v;
+  else if(k === 'dhMode') D.dhMode = (v === 'once' ? 'once' : 'every');
   else if(k === 'allin') D.allin = clamp(Math.round(+v) || 2, 2, 5);
   else D[k] = clamp(Math.round(+v) || D[k], k==='dhreq' ? 2 : 1, k==='dhreq' ? 30 : 500);
   saveState();
@@ -6572,11 +6654,16 @@ function boostersTabHTML(t){
         <label class="switch"><input type="checkbox" ${D.dhOn!==false?'checked':''} onchange="evDefSet('${t.id}','dhOn', this.checked ? 1 : 0)"><span></span></label>
         <b style="font-size:13.5px">💎 Diamond Hands — automatic, every single day</b>
       </div>
-      <p class="cardhint">Nothing to schedule: any player who shows up with the required streak (playing + answering right) earns the extra % that day, detected automatically.</p>
+      <p class="cardhint">Nothing to schedule: the bonus pays ONLY on streak milestone days (day X — and every X days after, if you pick that mode). Between milestones it stays dormant, so the streak keeps meaning something.</p>
       <label class="alabel">💎 % extra points</label>
       <input type="number" class="tinput" style="width:130px" value="${D.dhv}" min="1" max="300" onchange="evDefSet('${t.id}','dhv',this.value)">
       <label class="alabel">💎 streak days required</label>
       <input type="number" class="tinput" style="width:130px" value="${D.dhreq}" min="2" max="30" onchange="evDefSet('${t.id}','dhreq',this.value)">
+      <label class="alabel">💎 reward mode</label>
+      <select class="tinput" style="width:auto" onchange="evDefSet('${t.id}','dhMode', this.value)">
+        <option value="every" ${(D.dhMode||'every')==='every'?'selected':''}>Every ${D.dhreq} days — day ${D.dhreq}, ${D.dhreq*2}, ${D.dhreq*3}…</option>
+        <option value="once" ${D.dhMode==='once'?'selected':''}>Only once — the exact day the streak hits ${D.dhreq}</option>
+      </select>
       <label class="alabel">🃏 All-in — multiplier of the players' once-per-tournament card</label>
       <input type="number" class="tinput" style="width:130px" value="${D.allin||2}" min="2" max="5" onchange="evDefSet('${t.id}','allin',this.value)">
       <label class="alabel">🚀 To the Moon — % extra points</label>
@@ -6600,6 +6687,27 @@ function boostersTabHTML(t){
       }).join('')}
     </div>
   </div>`;
+}
+function loadFeedback(){
+  const box = $('#fb-list'); if(!box) return;
+  if(!CLOUD.on){ box.innerHTML = '<div class="empty" style="padding:16px">Cloud sync off.</div>'; return; }
+  cfetch('chat?select=*&tid=eq.__feedback__&order=ts.desc&limit=100')
+    .then(r=> r.ok ? r.json() : [])
+    .then(rows=>{
+      if(!rows.length){ box.innerHTML = '<div class="empty" style="padding:20px"><div class="big">💡</div>No player feedback yet — suggestions land here.</div>'; return; }
+      box.innerHTML = rows.map(x=>{
+        const m = x.data || {};
+        return `<div class="lb-row">
+          <div style="flex:1; min-width:0"><div style="white-space:normal">${esc(m.text||'')}</div><div class="sub">${esc(m.name||'?')} · ${new Date(+m.ts||0).toLocaleDateString('en-US',{month:'short', day:'numeric'})}</div></div>
+          <button class="btn sm ghost" title="Reviewed — remove from the list" onclick="fbDone('${x.id}')">✓</button>
+        </div>`;
+      }).join('');
+    }).catch(()=>{ box.innerHTML = '<div class="empty" style="padding:16px">Could not load feedback.</div>'; });
+}
+function fbDone(id){
+  cfetch('chat?id=eq.' + encodeURIComponent(id), { method:'DELETE', headers:{ 'Prefer':'return=minimal' } })
+    .then(()=> loadFeedback()).catch(()=>{});
+  toast('Reviewed ✓');
 }
 function learnTabHTML(t){
   const rows = iqQStats(t);
@@ -6632,6 +6740,11 @@ function learnTabHTML(t){
         <button class="btn ghost" onclick="openStudy('${t.id}', true)">📚 View key messages</button>
       </div>
       <p class="cardhint" style="margin-top:14px">Preview renders the recap with the data as of right now — any day, as many times as you want.</p>
+    </div>
+    <div class="card">
+      <h3>💡 Player feedback</h3>
+      <p class="cardhint">Suggestions sent from the players' 💡 button. Hit ✓ once reviewed and it disappears for good.</p>
+      <div id="fb-list">Loading…</div>
     </div>
   </div>`;
 }
@@ -6679,6 +6792,7 @@ function renderTournament(){
         <p style="font-size:12.5px; color:var(--ink3); font-weight:700; margin:8px 0 4px">Each game day runs <b>24 hours from this hour</b> — 9:00 AM → 9:00 AM next day by default. Every player's arena follows it.</p>
         <label class="alabel">Duration</label>
         <div class="pchips">${DUR_OPTS.map(o=>`<button class="pchip ${tc.dur===o.k?'sel':''}" onclick="tcDur('${o.k}')">${o.label}</button>`).join('')}</div>
+        <div style="margin-top:10px"><button class="btn sm ghost" onclick="openDayPicker()">🗓 Or pick the exact days manually — like booking a trip</button></div>
         <p style="font-size:12.5px; color:var(--ink3); font-weight:700; margin-top:10px">1–3 day tournaments include weekends (great for testing). Longer ones run weekdays only.</p>
         <label class="alabel">Invite code — people join this tournament with it</label>
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
@@ -6740,6 +6854,7 @@ function renderTournament(){
     requestAnimationFrame(()=> setTimeout(()=> $$('#tour-body .strow .fill').forEach(f=> f.style.width = f.dataset.w+'%'), 40));
   } else if(tourTab==='learn'){
     body.innerHTML = learnTabHTML(t);
+    loadFeedback();
   } else if(tourTab==='boost'){
     body.innerHTML = boostersTabHTML(t);
   } else if(tourTab==='sched'){
@@ -6847,6 +6962,7 @@ function archiveTournament(t){
     rows: dayRows(t, d.date).map(r=>({name:r.name, avatar:r.avatar, disp:(r.g?r.g.fmt(r.value):String(r.value)), pts:r.pts, rank:r.rank}))
   }));
   state.history = state.history || [];
+  state.history = state.history.filter(h=> h.tid !== t.id);   /* re-archiving replaces, never duplicates */
   state.history.unshift({
     id:'h'+uid(), tid:t.id, name:t.name, code:t.code||null,
     questions:(t.questions||[]).map(q=> Object.assign({}, q)),   /* kept so the next tournament can inherit them */
@@ -6862,6 +6978,8 @@ function doDeleteTournament(tid, keep){
   const archived = keep ? archiveTournament(t) : false;
   state.tournaments = (state.tournaments||[]).filter(x=>x.id!==tid);
   if(selTour===tid) selTour = null;
+  state.tomb = state.tomb || {};
+  state.tomb[tid] = Date.now();          /* tombstone: pull won't resurrect it */
   cloudDeleteTournament(tid);
   saveState(); closeModal();
   renderTournament(); renderHero();
@@ -6882,7 +7000,12 @@ function autoArchive(){
 /* --- history --- */
 function renderHistory(){
   const el = $('#adm-hist');
-  const hist = state.history || [];
+  const _hseen = new Set();
+  const hist = (state.history || []).filter(h=>{
+    const k = h.tid || (h.name + '|' + h.start + '|' + h.end);
+    if(_hseen.has(k)) return false;
+    _hseen.add(k); return true;
+  });
   if(!hist.length){
     el.innerHTML = `<div class="card"><h3>📜 Tournament history</h3>
       <div class="empty" style="padding:34px"><div class="big">📜</div>No finished tournaments yet.<br>
@@ -7175,6 +7298,73 @@ function qImgPick(inp, k){
     img.src = r.result;
   };
   r.readAsDataURL(f);
+}
+function csvParse(text){
+  const rows = []; let row = [], cell = '', inQ = false;
+  for(let i = 0; i < text.length; i++){
+    const ch = text[i];
+    if(inQ){
+      if(ch === '"'){ if(text[i+1] === '"'){ cell += '"'; i++; } else inQ = false; }
+      else cell += ch;
+    } else {
+      if(ch === '"') inQ = true;
+      else if(ch === ','){ row.push(cell); cell = ''; }
+      else if(ch === '\n' || ch === '\r'){
+        if(ch === '\r' && text[i+1] === '\n') i++;
+        row.push(cell); cell = '';
+        if(row.some(x=> x.trim() !== '')) rows.push(row);
+        row = [];
+      }
+      else cell += ch;
+    }
+  }
+  row.push(cell);
+  if(row.some(x=> x.trim() !== '')) rows.push(row);
+  return rows;
+}
+function importCSV(inp){
+  const file = inp.files && inp.files[0]; if(!file) return;
+  const r = new FileReader();
+  r.onload = ()=>{
+    try{
+      const rows = csvParse(String(r.result));
+      const hi = rows.findIndex(rw=> rw.some(c=> /^question/i.test(c.trim())) && rw.some(c=> /correct answer/i.test(c.trim())));
+      if(hi < 0){ toast('CSV: header row not found (needs Question / Correct Answer)'); return; }
+      const H = rows[hi].map(c=> c.trim().toLowerCase().replace(/\s+/g,' '));
+      const col = re => H.findIndex(h=> re.test(h));
+      const ci = {
+        q: col(/^question/), ans: col(/correct answer/),
+        w1: col(/wrong option 1/), w2: col(/wrong option 2/), w3: col(/wrong option 3/),
+        f: col(/answer fact/), hl: col(/highlight/), mk: col(/must know/),
+        why: col(/why is this/), ex: col(/an example/), w: col(/frequency/)
+      };
+      if(ci.q<0 || ci.ans<0 || ci.w1<0 || ci.w2<0 || ci.w3<0){ toast('CSV: missing required columns (Question, Correct Answer, Wrong Option 1-3)'); return; }
+      const items = [];
+      for(let i = hi+1; i < rows.length; i++){
+        const rw = rows[i];
+        const g = x => (x >= 0 && rw[x] != null) ? String(rw[x]).trim() : '';
+        const q = g(ci.q), ans = g(ci.ans), w1 = g(ci.w1), w2 = g(ci.w2), w3 = g(ci.w3);
+        if(!q || !ans || !w1 || !w2 || !w3) continue;
+        const opts = shuffle([ans, w1, w2, w3]);
+        const wNum = parseInt(g(ci.w).replace(/[^0-9]/g,'') || '1', 10) || 1;
+        items.push({
+          id: uid(), q, o: opts, a: opts.indexOf(ans), w: clamp(wNum, 1, 9),
+          f: g(ci.f) || null, hl: g(ci.hl) || null,
+          mk: /^(yes|sí|si|true|x|1)$/i.test(g(ci.mk)) || undefined,
+          why: g(ci.why) || null, ex: g(ci.ex) || null
+        });
+      }
+      if(!items.length){ toast('CSV read, but no valid questions found'); return; }
+      const mode = ($('#csv-mode') && $('#csv-mode').value) || 'append';
+      const arr = qBankArr();
+      if(mode === 'replace') arr.length = 0;
+      items.forEach(x=> arr.push(x));
+      saveState(); renderQBank();
+      toast('📥 ' + items.length + ' questions imported' + (mode==='replace' ? ' (bank replaced)' : '')); sGood(); confetti(50);
+    }catch(e){ toast('Could not parse that CSV — check the format'); }
+    inp.value = '';
+  };
+  r.readAsText(file);
 }
 function saveQuestion(){
   const q = $('#qb-q').value.trim(), ans = $('#qb-ans').value.trim();

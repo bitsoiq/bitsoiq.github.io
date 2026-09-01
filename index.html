@@ -493,6 +493,10 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 .trivia-opts button.ok{background:var(--greenbg); border-color:var(--green); color:var(--green)}
 .trivia-opts button.bad{background:var(--redbg); border-color:var(--red); color:#FF8FA0}
 .qtag{font-size:11px; font-weight:900; letter-spacing:2px; color:var(--neon); text-transform:uppercase; margin-bottom:10px}
+.fin-card{text-align:center; padding:46px 28px 40px}
+.fin-podium{transform:scale(1.3); transform-origin:top center; margin:34px auto 46px; justify-content:center}
+.fin-me{font-weight:900; font-size:17px; margin-top:10px; color:var(--ink)}
+.fin-me.top{font-size:21px; color:var(--neon); animation:evbob 1.6s ease-in-out infinite alternate}
 .madewith{text-align:center; color:var(--ink3); font-weight:700; font-size:12.5px; padding:30px 0 36px}
 .playrow{gap:12px; flex-wrap:wrap}
 .playrow .btn{flex:1 1 0; min-width:150px; text-align:center; padding-left:10px; padding-right:10px; white-space:nowrap}
@@ -998,6 +1002,7 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
       <div class="tname" id="ar-name">Tournament</div>
       <span class="pill neon" id="ar-day">DAY —</span>
       <span class="pill dim" id="ar-code" style="cursor:pointer" title="Click to copy" onclick="copyCode(curT() && curT().code || '')">🔑 —</span>
+      <button class="pill dim" style="cursor:pointer" onclick="fbOpen()" title="Tell the admin what to improve">💡 Feedback</button>
       <div class="spacer"></div>
       <span class="pill dim cdpill" id="ar-cd" title="Time left in today&#39;s game">⌛ --:--:--</span>
       <div class="musicctl" title="Console music">
@@ -1633,7 +1638,8 @@ async function cloudPull(){
         return t;
       });
       (state.tournaments||[]).forEach(t=>{ if(!byTid[t.id]) newTs.push(t); });
-      state.tournaments = newTs;
+      const _tomb = state.tomb || {};
+      state.tournaments = newTs.filter(x=> !(_tomb[x.id] && Date.now() - _tomb[x.id] < 600000));
       CLOUD.m.stamp = stamp;
       changed = true;
     }
@@ -2280,7 +2286,7 @@ const GAMES = [
 { id:'dice', name:'Dice Roll', tag:'Add the dice. Wrong = frozen.', dur:35,
   unit:'sums', lowerBetter:false, fmt:v=>v+' solved',
   grad:'linear-gradient(160deg,#12A278,#0A5C48)',
-  how:'Up to 4 dice appear — add them up and tap the right total, fast. A wrong answer freezes you for 2 seconds. Most correct sums in 20 seconds wins.',
+  how:'2 to 4 dice appear — add them up and tap the right total, fast. A wrong answer freezes you for 2 seconds. Most correct sums in 20 seconds wins.',
   run(stage, api){
     const arena = document.createElement('div'); arena.className='arena';
     arena.style.background='radial-gradient(720px 480px at 50% 20%, #12A278, #0A5C48 75%)';
@@ -2292,14 +2298,14 @@ const GAMES = [
       return `<div class="die3">${PIPS[v].map(p=>`<i class="pip" style="left:${p[0]-8.5}%; top:${p[1]-8.5}%"></i>`).join('')}</div>`;
     }
     function round(){
-      const n = randi(1,4);
+      const n = randi(2,4);                       /* never a single die */
       const vals = Array.from({length:n}, ()=> randi(1,6));
       sum = vals.reduce((a,b)=>a+b,0);
       $('#dr-d').innerHTML = vals.map(dieHTML).join('');
       const wrongs = new Set();
       let guard = 0;
       while(wrongs.size<3 && guard++<60){
-        const w = sum + randi(-3,3);
+        const w = sum + randi(-2,2);   /* closer traps */
         if(w!==sum && w>=n && w<=n*6) wrongs.add(w);
       }
       while(wrongs.size<3) wrongs.add(sum + wrongs.size + 1);
@@ -4622,7 +4628,7 @@ const GAMES = [
     let fly = null, flipT = 99, wobble = false, banner = '', bannerT = 0, flash = 0;
     function newRound(){
       knives = [];
-      for(let i=0, k=randi(2,3); i<k; i++){
+      for(let i=0, k=randi(3,4); i<k; i++){
         let a, guard = 0;
         do{ a = rand(0,TAU); }while(knives.some(q=> adiff(q,a)<0.5) && guard++<50);
         knives.push(a);
@@ -4633,10 +4639,10 @@ const GAMES = [
         do{ a = rand(0,TAU); }while((knives.some(q=> adiff(q,a)<0.45) || rimCoins.some(q=> adiff(q,a)<0.6)) && guard++<50);
         rimCoins.push(a);
       }
-      toThrow = 5 + round;
-      omega = (1.5 + (round-1)*0.28) * V * (Math.random()<.5 ? -1 : 1);
-      flipT = round>=2 ? rand(2.2,4.2) : 99;
-      wobble = round>=4;
+      toThrow = 6 + round;
+      omega = (1.85 + (round-1)*0.36) * V * (Math.random()<.5 ? -1 : 1);
+      flipT = rand(1.7,3.4);
+      wobble = round>=3;
       banner = 'ROUND '+round; bannerT = 1.3;
     }
     newRound();
@@ -4646,7 +4652,7 @@ const GAMES = [
     window.addEventListener('keydown', onKey);
     function land(){
       const a = norm(Math.PI/2 - rot);          /* disc-space angle at the bottom contact point */
-      if(knives.some(q=> adiff(q,a) < 0.17)){
+      if(knives.some(q=> adiff(q,a) < 0.20)){
         dead = true; flash = 1; sBad();
         api.finish(score, 800);
         return;
@@ -6059,9 +6065,12 @@ function dayRows(t, date){
     let mult = 1; const tags = [];
     if(ev && ev.k==='moon'){ mult *= 1 + (ev.v||200)/100; tags.push('🚀 +'+(ev.v||200)+'%'); }
     const ED = t.evDef || {};
-    if(ED.dhOn !== false){                                    /* Diamond Hands: automatic, every day */
-      const st = iqStreakBefore(t, r.name, date);
-      if(st >= (ED.dhreq||3)){ mult *= 1 + (ED.dhv||50)/100; tags.push('💎 +'+(ED.dhv||50)+'%'); }
+    if(ED.dhOn !== false){
+      /* milestone days only: the row exists = played & nailed it, so today counts in the streak */
+      const stT = iqStreakBefore(t, r.name, date) + 1;
+      const req = ED.dhreq || 3;
+      const hit = stT >= req && (ED.dhMode === 'once' ? stT === req : stT % req === 0);
+      if(hit){ mult *= 1 + (ED.dhv||50)/100; tags.push('💎 +'+(ED.dhv||50)+'%'); }
     }
     if(r.allin){ const am = ED.allin || 2; mult *= am; tags.push('🃏 ALL-IN ×'+am); }
     if(mult > 4) mult = 4;                                   /* sanity cap: +300% total */
@@ -6137,8 +6146,9 @@ function renderGrid(){}
 function renderJokes(){}
 function goTab(){}
 function addJoke(name){
+  const _t = curT();
   (state.jokes = state.jokes||[]).push({
-    id:uid(), name, ts:Date.now(),
+    id:uid(), name, ts:Date.now(), tid: _t ? _t.id : null,
     venue: VENUES[(state.jokes.length) % VENUES.length],
     done:false, doneTs:null
   });
@@ -6420,6 +6430,26 @@ function doAllin(){
   closeModal(); confetti(70); sWin();
   renderArena();
 }
+function fbOpen(){
+  modal(`
+    <div class="mi">💡</div>
+    <h2>Make BitsoIQ better</h2>
+    <p class="mt">Game ideas, boosters, bugs, anything — it goes straight to the admin.</p>
+    <textarea id="fb-txt" class="tinput" rows="4" maxlength="400" style="width:100%; text-align:left" placeholder="Your suggestion…"></textarea>
+    <div class="mrow">
+      <button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn big" onclick="fbSend()">Send 💌</button>
+    </div>
+  `);
+  setTimeout(()=>{ const x = $('#fb-txt'); if(x) x.focus(); }, 120);
+}
+function fbSend(){
+  const txt = ($('#fb-txt') && $('#fb-txt').value || '').trim();
+  if(!txt){ toast('Write something first 🙂'); return; }
+  const m = { id: 'fb-' + uid(), name: player.name || 'Player', text: txt, ts: Date.now() };
+  cloudUpsert('chat', [{ id: m.id, tid: '__feedback__', data: m, ts: m.ts }], 'id');
+  closeModal(); toast('Sent — thank you! 💚'); sGood();
+}
 function renderArena(){
   const t = curT();
   if(!t){ toast('This tournament is gone — the admin may have deleted it.'); goHome(); return; }
@@ -6452,11 +6482,30 @@ function renderTodayCard(t){
   /* finished */
   if(days.length && tKey(t) > days[days.length-1].date){
     const st = standings(t);
-    box.innerHTML = `<div class="card" style="text-align:center; padding:52px 30px">
-      <div style="font-size:52px">🏁</div><h2 style="margin-top:10px">Tournament finished</h2>
-      ${st.length ? `<div class="laurel" style="max-width:340px; margin:18px auto 0"><span class="lv">🏆</span>
-        <div><div class="ln">${esc(st[0].name)}</div><div class="ls">Champion · ${st[0].pts} pts</div></div></div>` : ''}
-      <p class="sub" style="margin-top:14px">Full final board lives in the <b>Points</b> tab.</p></div>`;
+    const slots = [[1,'p2','🥈'],[0,'p1','🥇'],[2,'p3','🥉']];
+    const myIdx = st.findIndex(x=> x.name===player.name);
+    let myLine = '';
+    if(myIdx >= 0){
+      const r = myIdx + 1;
+      myLine = r <= 3
+        ? `<div class="fin-me top">You finished <b>#${r}</b> — PODIUM! 🎉🏆</div>`
+        : `<div class="fin-me">You finished <b>#${r}</b> of ${st.length} with <b>${st[myIdx].pts} pts</b> — GG 🫡</div>`;
+    }
+    box.innerHTML = `<div class="card fin-card">
+      <div style="font-size:58px">🏁</div>
+      <h2 style="margin-top:6px">Tournament finished</h2>
+      ${st.length ? `<div class="podium fin-podium">${slots.map(([i,cls,med])=>{
+        const p = st[i]; if(!p) return '';
+        return `<div class="pcol ${cls}"><div class="pav ${cls==='p1'?'crowned':''}">${avatarHTML(p.avatar)}</div><div class="pn">${esc(p.name)}</div><div class="pp">${p.pts} pts</div><div class="pbar">${med}</div></div>`;
+      }).join('')}</div>` : ''}
+      ${myLine}
+      <p class="sub" style="margin-top:14px">Full final board lives in the <b>Points</b> tab. See you next tournament 🐂</p></div>`;
+    if(myIdx >= 0 && myIdx < 3){
+      try{
+        const k = 'fin-' + t.id + '-' + player.name;
+        if(!sessionStorage.getItem(k)){ sessionStorage.setItem(k, '1'); setTimeout(()=>{ confetti(150); sWin(); }, 350); }
+      }catch(e){}
+    }
     return;
   }
   const day = idx>=0 ? days[idx] : null;
@@ -6551,12 +6600,14 @@ function boostWidget(t){
   }
   const ED = t.evDef || {};
   if(ED.dhOn !== false){
-    const st = iqStreakBefore(t, player.name, tKey(t));
-    if(st >= (ED.dhreq||3)){
+    const req = ED.dhreq || 3;
+    const stT = iqStreakBefore(t, player.name, tKey(t)) + 1;
+    const hit = stT >= req && (ED.dhMode === 'once' ? stT === req : stT % req === 0);
+    if(hit){
       out.push(`<div class="boostcard dh"><div class="in big" style="padding:16px 18px 14px">
-        <div class="bk" style="color:#7CD5FF">💎 DIAMOND HANDS</div>
+        <div class="bk" style="color:#7CD5FF">💎 DIAMOND HANDS — DAY ${stT}</div>
         <div class="bnum" style="font-size:36px">+${ED.dhv||50}%</div>
-        <div class="bsub">your ${st}-day streak pays extra today — keep it alive 🔥</div>
+        <div class="bsub">streak milestone! play & nail today's question to cash it in 💎</div>
       </div></div>`);
     }
   }
@@ -6595,7 +6646,8 @@ function renderSide(t){
 }
 function fmtDate2(ts){ return new Date(ts).toLocaleDateString('en-US',{month:'short', day:'numeric'}); }
 function jokesHTML(){
-  const jokes = state.jokes || [];
+  const _ct = curT();
+  const jokes = (state.jokes || []).filter(j=> !j.tid || !_ct || j.tid === _ct.id);
   const ch = state.chances || {};
   const pending = jokes.filter(j=>!j.done).sort((a,b)=> (ch[b.name]||0)-(ch[a.name]||0) || a.ts-b.ts);
   const done = jokes.filter(j=>j.done).sort((a,b)=> b.doneTs-a.doneTs);
@@ -6603,8 +6655,10 @@ function jokesHTML(){
     <p class="pj-note">Second chances are paid in jokes — this is the public tab of who owes one. Only the <b>admin</b> can mark a joke as delivered.</p>`;
   if(!jokes.length) return html + `<div class="empty" style="padding:28px"><div class="big">🎭</div>The stage is empty… ask for a second chance and your name lands here.</div>`;
   if(pending.length){
-    const maxC = Math.max(1, ...pending.map(j=> ch[j.name]||1));
-    html += pending.map((j,i)=>{
+    const _seen = new Set();
+    const uniqP = pending.filter(j=> !_seen.has(j.name) && _seen.add(j.name));
+    const maxC = Math.max(1, ...uniqP.map(j=> ch[j.name]||1));
+    html += uniqP.map((j,i)=>{
       const c = ch[j.name]||1;
       const heat = c / maxC;
       const a1 = (0.06 + 0.34*heat).toFixed(2);
@@ -6615,7 +6669,7 @@ function jokesHTML(){
         <div class="pj-num" style="background:${numBg}; color:#fff">${i+1}</div>
         <div><div class="pj-name">${esc(j.name)}${j.name===player.name?' <span style="color:var(--ink3)">(you)</span>':''}</div>
         <div class="pj-sub">Joke at the next ${esc(j.venue)} · committed ${fmtDate2(j.ts)}</div></div>
-        <span class="pj-chip">×${c} chances</span>
+        <span class="pj-chip">×${c} extra opportunities</span>
       </div>`;
     }).join('');
   } else {
