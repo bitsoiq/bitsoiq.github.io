@@ -544,6 +544,8 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 #hins .hrk{min-width:30px; text-align:center; font-weight:900}
 #hins .hnm{min-width:120px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 #hins .hbar{flex:1.4; height:9px; background:var(--card2); border-radius:99px; overflow:hidden}
+#hins .hscroll{max-height:420px; overflow-y:auto; padding-right:6px; scrollbar-width:thin}
+#hins .hml{font-size:11px; color:#7CD5FF; font-weight:800}
 #hins .hbar i{display:block; height:100%; border-radius:99px}
 #hins .hins-x{position:fixed; top:16px; right:18px; width:42px; height:42px; border-radius:13px; background:var(--card); border:2px solid var(--line); color:var(--ink); font-weight:900; font-size:17px; cursor:pointer; z-index:2}
 .scorepill{align-self:center; display:flex; align-items:center; gap:8px; background:var(--card2); border:2px solid #59661F; border-radius:999px; padding:5px 14px 5px 6px; font-size:12.5px; font-weight:800; max-width:100%}
@@ -5561,7 +5563,7 @@ function iqWho(){ return (typeof player!=='undefined' && player && player.name) 
 function iqLog(q, ok){
   const t = primaryTour(); if(!t || !q) return null;
   state.triviaLog = state.triviaLog || [];
-  const _te = {tid:t.id, date:tKey(t), name:iqWho(), qid:q.id, q:q.q, ok:!!ok, ts:Date.now()};
+  const _te = {tid:t.id, date:tKey(t), name:iqWho(), email:(typeof player!=='undefined' && player && player.email) || null, qid:q.id, q:q.q, ok:!!ok, ts:Date.now()};
   state.triviaLog.push(_te);
   cloudPushTrivia(t, _te);
   if(state.triviaLog.length > 5000) state.triviaLog = state.triviaLog.slice(-5000);
@@ -6133,7 +6135,7 @@ function openDayPicker(){
   dpMonth = (dpSel.size ? [...dpSel].sort()[0] : todayKey()).slice(0, 7);
   modal(`
     <div class="qtag">🗓 Pick your tournament days</div>
-    <p class="mt" style="font-size:13.5px">Tap days to add or remove them — cross months with the arrows. Skipped days become rest days automatically.</p>
+    <p class="mt" style="font-size:13.5px">Tap a start day, then an end day — every weekday in between gets selected (weekends stay free). Cross months with the arrows; tap any day again to remove it.</p>
     <div id="dp-cal"></div>
     <div class="mrow">
       <button class="btn ghost" onclick="closeModal()">Cancel</button>
@@ -6170,7 +6172,28 @@ function dpNav(dir){
   dpMonth = Y + '-' + String(M).padStart(2, '0');
   paintDP();
 }
-function dpToggle(key){ if(dpSel.has(key)) dpSel.delete(key); else dpSel.add(key); paintDP(); }
+let dpAnchor = null;
+function dpToggle(key){
+  if(dpSel.has(key)){ dpSel.delete(key); dpAnchor = null; paintDP(); return; }
+  if(dpAnchor && key > dpAnchor){
+    /* rango: selecciona todos los días hábiles entre ancla y destino */
+    let d = new Date(dpAnchor + 'T12:00:00');
+    const end = new Date(key + 'T12:00:00');
+    while(d <= end){
+      const wd = d.getDay();
+      if(wd !== 0 && wd !== 6){
+        const k = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+        dpSel.add(k);
+      }
+      d.setDate(d.getDate() + 1);
+    }
+    dpAnchor = null;
+  } else {
+    dpSel.add(key);
+    dpAnchor = key;
+  }
+  paintDP();
+}
 function applyDayPicker(){
   if(!dpSel.size){ toast('Pick at least one day'); return; }
   const dates = [...dpSel].sort();
@@ -6372,6 +6395,59 @@ function qBankArr(){
   return state.questions;
 }
 /* where a new tournament's questions come from: the latest live bank, else the last archived one, else the defaults */
+let tcQ = null;
+function importCSVNew(inp){
+  const file = inp.files && inp.files[0]; if(!file) return;
+  const r = new FileReader();
+  r.onload = ()=>{
+    try{
+      const rows = csvParse(String(r.result));
+      const hi = rows.findIndex(rw=> rw.some(c=> /^question/i.test(c.trim())) && rw.some(c=> /correct answer/i.test(c.trim())));
+      if(hi < 0){ toast('CSV: header row not found'); return; }
+      const H = rows[hi].map(c=> c.trim().toLowerCase().replace(/\s+/g,' '));
+      const col = re => H.findIndex(h=> re.test(h));
+      const ci = { q: col(/^question/), ans: col(/correct answer/), w1: col(/wrong option 1/), w2: col(/wrong option 2/), w3: col(/wrong option 3/),
+                   f: col(/answer fact/), hl: col(/highlight/), mk: col(/must know/), why: col(/why is this/), ex: col(/an example/), w: col(/frequency/) };
+      if(ci.q<0 || ci.ans<0){ toast('CSV: missing required columns'); return; }
+      const items = [];
+      for(let i2 = hi+1; i2 < rows.length; i2++){
+        const rw = rows[i2];
+        const g = x => (x >= 0 && rw[x] != null) ? String(rw[x]).trim() : '';
+        const q = g(ci.q), ans = g(ci.ans), w1 = g(ci.w1), w2 = g(ci.w2), w3 = g(ci.w3);
+        if(!q || !ans || !w1 || !w2 || !w3) continue;
+        const opts = shuffle([ans, w1, w2, w3]);
+        items.push({ id: uid(), q, o: opts, a: opts.indexOf(ans), w: clamp(parseInt(g(ci.w).replace(/[^0-9]/g,'')||'1',10)||1,1,9),
+          f: g(ci.f)||null, hl: g(ci.hl)||null, mk: /^(yes|sí|si|true|x|1)$/i.test(g(ci.mk)) || undefined, why: g(ci.why)||null, ex: g(ci.ex)||null });
+      }
+      if(!items.length){ toast('CSV read, but no valid questions found'); return; }
+      tcQ = items;
+      renderTournament();
+      toast('📥 ' + items.length + ' questions staged for the new tournament'); sGood();
+    }catch(e){ toast('Could not parse that CSV'); }
+    inp.value = '';
+  };
+  r.readAsText(file);
+}
+function tcMatchDays(){
+  if(!tcQ || !tcQ.length) return;
+  const gs = enabledGames();
+  if(!gs.length){ toast('Enable at least one game in the roster'); return; }
+  const _n = new Date();
+  const start = ($('#tc-start') && $('#tc-start').value) || (_n.getFullYear() + '-' + String(_n.getMonth()+1).padStart(2,'0') + '-' + String(_n.getDate()).padStart(2,'0'));
+  const days = [];
+  let d = new Date(start + 'T12:00:00');
+  while(days.length < tcQ.length){
+    const wd = d.getDay();
+    if(wd !== 0 && wd !== 6){
+      const key = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+      days.push({ date: key, gameId: gs[randi(0, gs.length-1)].id });
+    }
+    d.setDate(d.getDate() + 1);
+  }
+  tc.days = days;
+  renderTournament();
+  toast('🗓 ' + days.length + ' weekdays scheduled — one question per day, in your CSV order');
+}
 let qSrcOverride = null;
 function useHistQuestions(hid){
   qSrcOverride = hid;
@@ -6388,8 +6464,12 @@ function histInsights(hid){
   const qrows = Object.keys(qmap).map(k=> ({q:qmap[k].q, a:qmap[k].a, c:qmap[k].c, pct:Math.round(qmap[k].c/qmap[k].a*100)})).sort((x,y)=> x.pct - y.pct);
   const tot = log.length, okN = log.filter(e=> e.ok).length;
   const pmap = {};
-  log.forEach(e=>{ const m = pmap[e.name] = pmap[e.name] || {a:0, c:0}; m.a++; if(e.ok) m.c++; });
-  const prows = Object.keys(pmap).map(n=> ({name:n, a:pmap[n].a, c:pmap[n].c, pct:Math.round(pmap[n].c/pmap[n].a*100)})).sort((a,b)=> b.pct - a.pct || b.a - a.a);
+  log.forEach(e=>{ const m = pmap[e.name] = pmap[e.name] || {a:0, c:0, email:null}; m.a++; if(e.ok) m.c++; if(e.email) m.email = e.email; });
+  (h.days||[]).forEach(d=> (d.rows||[]).forEach(r=>{ if(r.email && pmap[r.name]) pmap[r.name].email = pmap[r.name].email || r.email; }));
+  const prows = Object.keys(pmap).map(n=>{
+    const stR = st.find(x=> x.name===n);
+    return { name:n, email:pmap[n].email, a:pmap[n].a, c:pmap[n].c, pct:Math.round(pmap[n].c/pmap[n].a*100), pts: stR ? stR.pts : 0, days: stR ? stR.days : 0 };
+  }).sort((a,b)=> b.pct - a.pct || b.a - a.a);
   const daysD = (h.days||[]).map(d=>{
     const dl = log.filter(e=> e.date===d.date);
     return { date:d.date, game:d.gameName, players:(d.rows||[]).length, acc: dl.length ? Math.round(dl.filter(e=>e.ok).length/dl.length*100) : null };
@@ -6397,13 +6477,13 @@ function histInsights(hid){
   const maxP = Math.max(1, ...daysD.map(d=> d.players));
   const qcol = p => p < 50 ? 'var(--red)' : p < 75 ? '#F0B429' : 'var(--green)';
   const bar = (pct, col)=> `<div class="hbar"><i style="width:${Math.max(2, pct)}%; background:${col}"></i></div>`;
-  const qbar = r => `<div class="hrow"><span class="hnm" style="flex:1.6">${esc(r.q)}</span>${bar(r.pct, qcol(r.pct))}<b style="color:${qcol(r.pct)}; min-width:44px; text-align:right">${r.pct}%</b></div>`;
+  const qbar = r => `<div class="hrow"><span class="hnm" style="flex:1.6; white-space:normal">${esc(r.q)}</span>${bar(r.pct, qcol(r.pct))}<b style="color:${qcol(r.pct)}; min-width:70px; text-align:right">${r.pct}% · ${r.c}/${r.a}</b></div>`;
   let el = document.getElementById('hins'); if(el) el.remove();
   el = document.createElement('div'); el.id = 'hins';
   el.innerHTML = `
     <button class="hins-x" onclick="document.getElementById('hins').remove()">✕</button>
     <div class="hins-wrap">
-      <div class="qtag">📊 TOURNAMENT INSIGHTS</div>
+      <div class="qtag">📊 TOURNAMENT INSIGHTS — FULL REPORT</div>
       <h1 style="margin:4px 0 2px">${esc(h.name)}</h1>
       <div style="font-weight:800; color:var(--ink3); font-size:13.5px">${fmtDay(h.start)} → ${fmtDay(h.end)} · code ${esc(h.code||'—')}</div>
       <div class="hins-chips">
@@ -6413,23 +6493,44 @@ function histInsights(hid){
         <div class="hc"><b>${tot ? Math.round(okN/tot*100) : 0}%</b><span>accuracy</span></div>
         <div class="hc"><b>${st.length ? esc(st[0].name) : '—'}</b><span>champion 👑</span></div>
       </div>
-      <h3>🏆 Final standings</h3>
-      ${st.length ? st.slice(0,10).map((p,i)=> `<div class="hrow"><span class="hrk">${i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1)}</span><span class="hnm">${esc(p.name)}</span>${bar(Math.round(p.pts/(st[0].pts||1)*100), 'var(--neon)')}<b>${p.pts} pts · ${p.days}d</b></div>`).join('') : '<div class="empty" style="padding:16px">No runs recorded.</div>'}
+      <h3>🏆 Final standings — everyone</h3>
+      <div class="hscroll">
+      ${st.length ? st.map((p,i)=> `<div class="hrow"><span class="hrk">${i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1)}</span><span class="hnm">${esc(p.name)}</span>${bar(Math.round(p.pts/(st[0].pts||1)*100), 'var(--neon)')}<b>${p.pts} pts · ${p.days}d</b></div>`).join('') : '<div class="empty" style="padding:16px">No runs recorded.</div>'}
+      </div>
       <h3>📅 Participation & accuracy by day</h3>
+      <div class="hscroll">
       ${daysD.map(d=> `<div class="hrow"><span class="hnm" style="min-width:190px; flex:none">${fmtDay(d.date)} · ${esc(d.game)}</span>${bar(Math.round(d.players/maxP*100), '#7CD5FF')}<b>${d.players} 👥${d.acc!=null ? ' · '+d.acc+'% ✅' : ''}</b></div>`).join('')}
+      </div>
       ${qrows.length ? `
-      <h3>🔴 Messages that need reinforcement</h3>
-      ${qrows.slice(0,6).map(qbar).join('')}
-      <h3>🟢 Best learned messages</h3>
-      ${qrows.slice(-4).reverse().map(qbar).join('')}
-      <h3>🧠 Sharpest players — trivia accuracy</h3>
-      ${prows.slice(0,8).map((p,i)=> `<div class="hrow"><span class="hrk">${i+1}</span><span class="hnm">${esc(p.name)}</span>${bar(p.pct, qcol(p.pct))}<b>${p.pct}% · ${p.a} ans</b></div>`).join('')}` : '<div class="empty" style="padding:22px">No trivia data was captured for this tournament.</div>'}
+      <h3>🧠 Every message, worst learned first <span class="pill dim">red = needs reinforcement</span></h3>
+      <div class="hscroll">${qrows.map(qbar).join('')}</div>
+      <h3>👥 Every player — accuracy, volume & contact <span class="pill dim">emails admin-only</span></h3>
+      <div class="hscroll">
+      ${prows.map((p,i)=> `<div class="hrow"><span class="hrk">${i+1}</span>
+        <span class="hnm" style="white-space:normal">${esc(p.name)}${p.email ? `<div class="hml">${esc(p.email)}</div>` : ''}</span>
+        ${bar(p.pct, qcol(p.pct))}<b style="min-width:150px; text-align:right">${p.pct}% · ${p.c}/${p.a} ans · ${p.pts} pts</b></div>`).join('')}
+      </div>` : '<div class="empty" style="padding:22px">No trivia data was captured for this tournament.</div>'}
+      <h3>💡 Feedback from this tournament</h3>
+      <div id="hins-fb" class="hscroll"><div class="empty" style="padding:14px">Loading…</div></div>
       <div class="mrow" style="justify-content:center; margin-top:28px">
         <button class="btn ghost" onclick="histCopy('${h.id}')">📋 Copy summary for leadership</button>
         <button class="btn big" onclick="document.getElementById('hins').remove()">Done</button>
       </div>
     </div>`;
   document.body.appendChild(el);
+  /* feedback ligado a este torneo (los nuevos traen tid) */
+  if(CLOUD.on && h.tid){
+    cfetch('chat?select=*&tid=eq.__feedback__&order=ts.desc&limit=200').then(r=> r.ok ? r.json() : []).then(rows=>{
+      const box = document.getElementById('hins-fb'); if(!box) return;
+      const mine = rows.map(x=> x.data||{}).filter(m=> m.tid === h.tid);
+      box.innerHTML = mine.length
+        ? mine.map(m=> `<div class="hrow"><span class="hnm" style="white-space:normal; flex:2">${esc(m.text||'')}</span><b>${esc(m.name||'?')}${m.email ? ' · '+esc(m.email) : ''}</b></div>`).join('')
+        : '<div class="empty" style="padding:14px">No feedback tagged to this tournament (or already reviewed).</div>';
+    }).catch(()=>{});
+  } else {
+    const box = document.getElementById('hins-fb');
+    if(box) box.innerHTML = '<div class="empty" style="padding:14px">Feedback tagging starts with the new version.</div>';
+  }
 }
 function histCopy(hid){
   const h = (state.history||[]).find(x=> x.id===hid); if(!h) return;
@@ -6738,7 +6839,7 @@ function loadFeedback(){
       box.innerHTML = rows.map(x=>{
         const m = x.data || {};
         return `<div class="lb-row">
-          <div style="flex:1; min-width:0"><div style="white-space:normal">${esc(m.text||'')}</div><div class="sub">${esc(m.name||'?')} · ${new Date(+m.ts||0).toLocaleDateString('en-US',{month:'short', day:'numeric'})}</div></div>
+          <div style="flex:1; min-width:0"><div style="white-space:normal">${esc(m.text||'')}</div><div class="sub">${esc(m.name||'?')}${m.email ? ' · '+esc(m.email) : ''}${m.tname ? ' · 🏆 '+esc(m.tname) : ''} · ${new Date(+m.ts||0).toLocaleDateString('en-US',{month:'short', day:'numeric'})}</div></div>
           <button class="btn sm ghost" title="Reviewed — remove from the list" onclick="fbDone('${x.id}')">✓</button>
         </div>`;
       }).join('');
@@ -6780,6 +6881,15 @@ function learnTabHTML(t){
         <button class="btn ghost" onclick="openStudy('${t.id}', true)">📚 View key messages</button>
       </div>
       <p class="cardhint" style="margin-top:14px">Preview renders the recap with the data as of right now — any day, as many times as you want.</p>
+    </div>
+    <div class="card">
+      <h3>🏁 Past tournaments — full insights</h3>
+      <p class="cardhint">Every finished tournament, one click away: standings, per-question accuracy, per-player performance (with emails) and its feedback.</p>
+      ${(state.history||[]).length ? (state.history||[]).slice(0,12).map(h=>`
+        <div class="lb-row">
+          <div style="flex:1; min-width:0"><div>${esc(h.name)}</div><div class="sub">${fmtDay(h.start)} → ${fmtDay(h.end)} · ${(h.standings||[]).length} players</div></div>
+          <button class="btn sm" onclick="histInsights('${h.id}')">📊 Insights</button>
+        </div>`).join('') : '<div class="empty" style="padding:18px">No finished tournaments yet.</div>'}
     </div>
     <div class="card">
       <h3>💡 Player feedback</h3>
@@ -6842,7 +6952,12 @@ function renderTournament(){
         </div>
         <p style="font-size:12.5px; color:var(--ink3); font-weight:700; margin-top:8px">Auto-generated for you — or type your own 8 letters &amp; numbers.</p>
         <label class="alabel">Questions</label>
-        <p style="font-size:12.5px; color:var(--ink3); font-weight:700">This tournament starts with <b style="color:var(--neon)">${qSrc.arr.length} questions copied from ${esc(qSrc.label)}</b> — edit them in the tournament's Questions tab after creating it.</p>
+        <p style="font-size:12.5px; color:var(--ink3); font-weight:700">${tcQ ? `<b style="color:var(--neon)">${tcQ.length} questions imported from your CSV</b> — this tournament will start with exactly those.` : `This tournament starts with <b style="color:var(--neon)">${qSrc.arr.length} questions copied from ${esc(qSrc.label)}</b> — or import your own right now:`}</p>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:6px 0 4px">
+          <input type="file" accept=".csv,text/csv" onchange="importCSVNew(this)">
+          ${tcQ ? `<button class="btn sm ghost" onclick="tcQ=null; renderTournament()">✕ discard import</button>` : ''}
+        </div>
+        ${tcQ ? `<button class="btn sm" style="margin-top:6px" onclick="tcMatchDays()">🗓 1 day per question — schedule ${tcQ.length} weekdays automatically</button>` : ''}
         <div class="alabel" style="display:flex; align-items:center; gap:10px">Schedule preview
           <button class="btn sm ghost" onclick="tcRegen()">🔀 Shuffle games</button>
         </div>
@@ -6937,12 +7052,13 @@ function createTournament(){
   const t = {
     id:'t'+uid(), name, start, durType:tc.dur, startHour:(tc.hour!=null?tc.hour:9), days:tc.days, createdAt:Date.now(),
     results:[], code, chat:[],
-    questions: qSrc.arr.map(q=> Object.assign({}, q)),   /* copied so each tournament tweaks its own bank */
+    questions: (tcQ ? tcQ : qSrc.arr).map(q=> Object.assign({}, q)),   /* staged CSV wins; else copied bank */
   };
   state.tournaments.push(t);
   saveState();
   tc = { dur:'w1', days:null, code:null, hour:9 };
   qSrcOverride = null;
+  tcQ = null;
   selTour = t.id; tourTab = 'today';
   renderTournament(); renderHero();
   confetti(90); sWin();
@@ -6999,14 +7115,14 @@ function archiveTournament(t){
   const days = t.days.filter(d=>d.gameId).map(d=>({
     date: d.date, gameId: d.gameId,
     gameName: (gameById(d.gameId)||{name:d.gameId}).name,
-    rows: dayRows(t, d.date).map(r=>({name:r.name, avatar:r.avatar, disp:(r.g?r.g.fmt(r.value):String(r.value)), pts:r.pts, rank:r.rank}))
+    rows: dayRows(t, d.date).map(r=>({name:r.name, avatar:r.avatar, email:r.email||null, disp:(r.g?r.g.fmt(r.value):String(r.value)), pts:r.pts, rank:r.rank}))
   }));
   state.history = state.history || [];
   state.history = state.history.filter(h=> h.tid !== t.id);   /* re-archiving replaces, never duplicates */
   state.history.unshift({
     id:'h'+uid(), tid:t.id, name:t.name, code:t.code||null,
     questions:(t.questions||[]).map(q=> Object.assign({}, q)),   /* kept so the next tournament can inherit them */
-    trivia:(state.triviaLog||[]).filter(e=> e.tid===t.id).map(e=> ({date:e.date, name:e.name, qid:e.qid, q:e.q, ok:e.ok})),
+    trivia:(state.triviaLog||[]).filter(e=> e.tid===t.id).map(e=> ({date:e.date, name:e.name, email:e.email||null, qid:e.qid, q:e.q, ok:e.ok})),
     start:t.days[0].date, end:t.days[t.days.length-1].date,
     archivedAt:Date.now(), standings:standings(t), days
   });

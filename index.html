@@ -628,6 +628,16 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 .rv-fact b{color:#5463FF}
 .rv-fact .hl{color:#5463FF}
 
+.cucard{background:linear-gradient(135deg, #3A2B12, #2C2418); border:1.5px solid #C98A2B; border-radius:20px; padding:18px 20px; margin-bottom:16px; box-shadow:0 4px 0 #1F1809; animation:cupop .4s cubic-bezier(.2,1.4,.4,1)}
+@keyframes cupop{from{transform:scale(.96); opacity:0}to{transform:scale(1); opacity:1}}
+.cucard .cu-head{display:flex; gap:12px; align-items:flex-start}
+.cucard .cu-ic{font-size:30px; animation:cutick 2s ease-in-out infinite}
+@keyframes cutick{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(8deg)}}
+.cucard b{color:#FFC65C; font-size:15.5px; letter-spacing:.3px}
+.cucard .cu-sub{font-size:12.5px; color:#D8B87A; font-weight:700; line-height:1.55; margin-top:3px}
+.cucard .cubtn{width:100%; margin-top:14px; background:linear-gradient(135deg, #FFB938, #F08C00); color:#231604; border:none; box-shadow:0 3px 0 #9C5E06; font-weight:900}
+.cucard .cubtn:hover{filter:brightness(1.06)}
+.cucard .cu-left{font-size:11.5px; color:#B99A5E; font-weight:800; margin-top:10px; text-align:center}
 #toast{
   position:fixed; bottom:30px; left:50%; transform:translateX(-50%) translateY(90px);
   background:var(--neon); color:#1E1B16; font-weight:800; font-size:14.5px;
@@ -836,11 +846,12 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 .abar .spacer{margin-left:auto}
 .cdpill{font-variant-numeric:tabular-nums}
 .arena-grid{display:grid; grid-template-columns:7fr 5fr; gap:22px; align-items:stretch}
-#ar-right{position:relative; min-height:460px}
+#ar-right{position:relative; min-height:max(560px, calc(100vh - 340px))}
 #ar-right .rwrap{position:absolute; inset:0; overflow-y:auto; display:flex; flex-direction:column; padding-right:2px; scrollbar-width:thin; scrollbar-color:var(--line) transparent}
 #ar-right .rwrap::-webkit-scrollbar{width:8px}
 #ar-right .rwrap::-webkit-scrollbar-thumb{background:var(--line); border-radius:99px}
-#ar-right .rwrap > .card:first-child{flex:1; display:flex; flex-direction:column; min-height:300px}
+#ar-right .rwrap > .card:first-child{flex:1 0 auto; display:flex; flex-direction:column; min-height:340px}
+#ar-right .rwrap > .card{overflow:hidden}
 #ar-right .rwrap > .card:first-child .feed{flex:1}
 @media(max-width:980px){
   #ar-right{position:static; min-height:0}
@@ -5591,7 +5602,7 @@ function pickQuestion(){
   if(!src || !src.length) return null;
   if(pt && (pt.questions||[]).length){
     const days = (pt.days||[]).filter(d=> d.gameId).map(d=> d.date);
-    const di = days.indexOf(tKey(pt));
+    const di = days.indexOf((typeof cuDate !== 'undefined' && cuDate) ? cuDate : tKey(pt));
     if(di >= 0){
       const q = src[di % src.length];
       state.lastQ = q.id; saveState();
@@ -5614,7 +5625,8 @@ function iqWho(){ return (typeof player!=='undefined' && player && player.name) 
 function iqLog(q, ok){
   const t = primaryTour(); if(!t || !q) return null;
   state.triviaLog = state.triviaLog || [];
-  const _te = {tid:t.id, date:tKey(t), name:iqWho(), qid:q.id, q:q.q, ok:!!ok, ts:Date.now()};
+  const _dk9 = (typeof cuDate !== 'undefined' && cuDate) ? cuDate : tKey(t);
+  const _te = {tid:t.id, date:_dk9, name:iqWho(), email:(typeof player!=='undefined' && player && player.email) || null, qid:q.id, q:q.q, ok:!!ok, ts:Date.now()};
   state.triviaLog.push(_te);
   cloudPushTrivia(t, _te);
   if(state.triviaLog.length > 5000) state.triviaLog = state.triviaLog.slice(-5000);
@@ -5632,6 +5644,18 @@ function iqLog(q, ok){
     }
   } else { s.n = 0; s.last = ''; }
   state.streaks[k] = s;
+  if(typeof cuDate !== 'undefined' && cuDate){
+    /* recuperaste un día pasado: recalcula la racha con el historial completo */
+    const dys = (t.days||[]).filter(d=>d.gameId).map(d=>d.date).filter(dd=> dd <= tKey(t));
+    let end = dys.length - 1;
+    while(end >= 0 && !state.triviaLog.some(e=> e.tid===t.id && e.date===dys[end] && e.name===iqWho())) end--;
+    let n2 = 0, last2 = '';
+    for(let i2 = 0; i2 <= end; i2++){
+      const okd = state.triviaLog.some(e=> e.tid===t.id && e.date===dys[i2] && e.name===iqWho() && e.ok);
+      if(okd){ n2++; last2 = dys[i2]; } else { n2 = 0; last2 = ''; }
+    }
+    state.streaks[k] = {n:n2, last:last2};
+  }
   saveState();
   return s;
 }
@@ -6173,15 +6197,36 @@ function addJoke(name){
 function primaryTour(){ return curT() || (state.tournaments||[])[0] || null; }
 
 /* ---------- one practice, one real run, one rescue — per tournament day ---------- */
+let cuDate = null;                       /* catch-up: fecha del día perdido en juego */
+function effK(t){ return cuDate || tKey(t); }
+function cuMissed(t){
+  /* días de juego pasados sin resultado mío y sin intento quemado en este device */
+  const played = new Set((t.results||[]).filter(r=> r.name===player.name).map(r=> r.date));
+  const dl = player.daily || {};
+  return (t.days||[]).filter(x=> x.gameId && x.date < tKey(t))
+    .filter(x=> !played.has(x.date))
+    .filter(x=>{ const d = dl[(t.code||'') + '|' + x.date]; return !(d && (d.real || d.realStarted || d.retried)); })
+    .map(x=> x.date);
+}
+function cuStart(date){
+  const t = curT(); if(!t) return;
+  if(date >= tKey(t)) return;
+  const day = (t.days||[]).find(x=> x.date===date);
+  if(!day || !day.gameId) return;
+  cuDate = date;
+  toast('⏰ Catching up ' + fmtDay(date) + ' — same rules: one run, one question');
+  beginGame(day.gameId, 'real', false);
+}
+function cuEnd(){ cuDate = null; renderArena(); }
 function daily(t){
   player.daily = player.daily || {};
-  const k = (t.code||'') + '|' + tKey(t);
+  const k = (t.code||'') + '|' + effK(t);
   if(!player.daily[k]) player.daily[k] = {w:0, real:false, retried:false};
   return player.daily[k];
 }
 function startPlay(mode){
   const t = curT(); if(!t) return;
-  const day = (t.days||[]).find(x=> x.date===tKey(t));
+  const day = (t.days||[]).find(x=> x.date===effK(t));
   if(!day || !day.gameId){ toast('No game live right now.'); return; }
   const d = daily(t);
   if(mode==='warmup'){
@@ -6203,7 +6248,7 @@ let curCode = null, joinPending = null, arenaTab = 'chat', editing = false;
 function show(id){ ['scr-landing','scr-setup','scr-home','scr-arena'].forEach(s=> $('#'+s).classList.add('hidden')); $('#'+id).classList.remove('hidden'); }
 function findTour(code){ return (state.tournaments||[]).find(t=> (t.code||'').toUpperCase()===code) || null; }
 function curT(){ return curCode ? findTour(curCode) : null; }
-function goHome(){ curCode = null; renderHome(); show('scr-home'); }
+function goHome(){ curCode = null; cuDate = null; renderHome(); show('scr-home'); }
 
 /* ---------- join flow ---------- */
 async function tryJoin(){
@@ -6462,7 +6507,8 @@ function fbOpen(){
 function fbSend(){
   const txt = ($('#fb-txt') && $('#fb-txt').value || '').trim();
   if(!txt){ toast('Write something first 🙂'); return; }
-  const m = { id: 'fb-' + uid(), name: player.name || 'Player', text: txt, ts: Date.now() };
+  const _ft = curT();
+  const m = { id: 'fb-' + uid(), name: player.name || 'Player', email: player.email || null, tid: _ft ? _ft.id : null, tname: _ft ? _ft.name : null, text: txt, ts: Date.now() };
   cloudUpsert('chat', [{ id: m.id, tid: '__feedback__', data: m, ts: m.ts }], 'id');
   closeModal(); toast('Sent — thank you! 💚'); sGood();
 }
@@ -6539,7 +6585,21 @@ function renderTodayCard(t){
   const rows = dayRows(t, tKey(t));
   const mine = rows.find(r=> r.name===player.name);
   const best = rows[0];
+  const _mis = cuMissed(t);
+  const _cu = _mis.length ? (()=>{
+    const nd = (t.days||[]).find(x=> x.date===_mis[0]);
+    const ng = nd ? gameById(nd.gameId) : null;
+    return `<div class="cucard">
+      <div class="cu-head"><span class="cu-ic">⏰</span>
+        <div><b>KEEP UP — you're ${_mis.length} day${_mis.length===1?'':'s'} behind</b>
+        <div class="cu-sub">Out of office? No problem. Play the days you missed — each one counts on that day's board, question included. Same rules, full points.</div></div>
+      </div>
+      <button class="btn cubtn" onclick="cuStart('${_mis[0]}')">▶ Play ${fmtDay(_mis[0])}${ng ? ' · ' + esc(ng.name) : ''}</button>
+      ${_mis.length > 1 ? `<div class="cu-left">${_mis.length - 1} more waiting — they'll line up here one by one until you're caught up 💪</div>` : `<div class="cu-left">This is the last one — finish it and you're fully caught up 🏁</div>`}
+    </div>`;
+  })() : '';
   box.innerHTML = `
+    ${_cu}
     <div class="gherocard">
       <div class="ghero-art" style="background:${g.grad}">${ICONS[g.id]}
         <div class="cdtag">⌛ <span class="cdv">--:--:--</span></div>
@@ -6868,7 +6928,7 @@ function showSecondChance(gid){
       </div>
     </div>
     <div class="mrow">
-      <button class="btn ghost" onclick="closeModal(); renderArena()">No thanks</button>
+      <button class="btn ghost" onclick="closeModal(); cuEnd()">No thanks</button>
       <button class="btn big" onclick='acceptJoke("${gid}")'>Deal! Add me 🎤</button>
     </div>
   `);
@@ -6888,25 +6948,27 @@ function acceptJoke(gid){
 }
 /* record: keep the better score, drop a score event into the chat */
 function recordResult(t, g, val){
-  const i = t.results.findIndex(r=> r.date===tKey(t) && r.name===player.name);
+  const _dk = effK(t);
+  const i = t.results.findIndex(r=> r.date===_dk && r.name===player.name);
   const prev = i>=0 ? t.results[i].value : undefined;
   const better = prev===undefined || (g.lowerBetter ? val<prev : val>prev);
-  const ai = !!(player.allin && player.allin[t.id]===tKey(t)) || undefined;
-  if(i>=0){ if(better) t.results[i] = {date:tKey(t), gameId:g.id, name:player.name, avatar:player.avatar, value:val, allin:ai}; }
-  else t.results.push({date:tKey(t), gameId:g.id, name:player.name, avatar:player.avatar, value:val, allin:ai});
+  const ai = !!(player.allin && player.allin[t.id]===_dk) || undefined;
+  const em = player.email || undefined;
+  if(i>=0){ if(better) t.results[i] = {date:_dk, gameId:g.id, name:player.name, avatar:player.avatar, value:val, allin:ai, email:em}; }
+  else t.results.push({date:_dk, gameId:g.id, name:player.name, avatar:player.avatar, value:val, allin:ai, email:em});
   (t.chat = t.chat||[]).push({
-    id:uid(), date:tKey(t), name:player.name, avatar:player.avatar,
+    id:uid(), date:_dk, name:player.name, avatar:player.avatar,
     text:'scored '+g.fmt(val)+(prev!==undefined ? (better?' — improved!':' (kept '+g.fmt(prev)+')') : ''),
     score:val, ts:Date.now()
   });
   saveState();
-  const _rr = t.results.find(r=> r.date===tKey(t) && r.name===player.name);
+  const _rr = t.results.find(r=> r.date===effK(t) && r.name===player.name);
   if(_rr) cloudPushResult(t, _rr);
   cloudPushChat(t, t.chat[t.chat.length-1]);
 }
 function tryRecord(g){
   const t = curT(); if(!t) return 'none';
-  const day = (t.days||[]).find(d=> d.date===tKey(t));
+  const day = (t.days||[]).find(d=> d.date===effK(t));
   if(!day || !day.gameId) return 'rest';
   if(day.gameId !== g.id) return 'wrong';
   if(!lastRun || lastRun.gid!==g.id || lastRun.val==null) return 'dnf';
@@ -6934,8 +6996,8 @@ function showWinResult(g){
     <p class="mt">Quick fingers <b>and</b> big brain. ${lines[status]}</p>
     <div class="mrow">
       ${status==='recorded' && canRescue() ? `<button class="btn ghost" onclick='closeModal(); showSecondChance("${g.id}")'>🎤 Replay once — costs a joke</button>` : ''}
-      ${status==='recorded' ? `<button class="btn ghost" onclick="closeModal(); setTab('points')">See the board</button>` : ''}
-      <button class="btn" onclick="closeModal()">Back to the arena</button>
+      ${status==='recorded' ? `<button class="btn ghost" onclick="closeModal(); cuDate=null; setTab('points')">See the board</button>` : ''}
+      <button class="btn" onclick="closeModal(); cuEnd()">${cuDate ? '⏰ Next missed day' : 'Back to the arena'}</button>
     </div>
   `);
   sWin();
@@ -6951,7 +7013,7 @@ function showNoPoints(g){
       : `That was the last chance for today — at Bitso we stay sharp on the facts. Tomorrow is a fresh game.`}</p>
     <div class="mrow">
       ${rescue ? `<button class="btn big" onclick='closeModal(); showSecondChance("${g.id}")'>🎤 Save it — replay for a joke</button>` : ''}
-      <button class="btn ghost" onclick="closeModal()">Accept it</button>
+      <button class="btn ghost" onclick="closeModal(); cuEnd()">Accept it</button>
     </div>
   `);
 }
