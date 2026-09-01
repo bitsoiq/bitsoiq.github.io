@@ -520,6 +520,8 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 .jtc:hover{color:var(--ink)}
 .jtc.on{background:linear-gradient(180deg,#EFFF7C,var(--neon)); color:#1E1B16; border-color:var(--neon); box-shadow:0 3px 0 var(--neonsh)}
 .jtc .n{font-size:11px; background:rgba(0,0,0,.22); border-radius:999px; padding:2px 8px}
+.jtc .x{font-size:10px; font-weight:900; color:#FF8FA0; background:rgba(255,77,90,.2); border-radius:999px; padding:3px 8px; margin-left:2px}
+.jtc .x:hover{background:rgba(255,77,90,.45); color:#fff}
 .jtc.on .n{background:rgba(0,0,0,.14)}
 .dp-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:6px; text-align:center}
 .dp-grid i{font-style:normal; font-weight:900; font-size:10.5px; color:var(--ink3); letter-spacing:1px}
@@ -5937,6 +5939,28 @@ function jokeSort(a,b){
   return cb-ca || a.ts-b.ts;
 }
 let jokesFilterT = '';
+function jokesClear(tid){
+  const doomed = (state.jokes||[]).filter(j=> (tid === '__none__' ? !j.tid : j.tid === tid));
+  if(!doomed.length){ renderJokes(); return; }
+  modal(`
+    <div class="mi">🧹</div>
+    <h2>Clear this list?</h2>
+    <p class="mt">This removes <b>${doomed.length}</b> joke${doomed.length===1?'':'s'} from a finished tournament — for you and for the players. Live tournaments can't be cleared until they end.</p>
+    <div class="mrow">
+      <button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn danger" onclick="jokesClearGo('${tid}')">🧹 Clear it</button>
+    </div>
+  `);
+}
+function jokesClearGo(tid){
+  const keep = [], gone = [];
+  (state.jokes||[]).forEach(j=> ((tid === '__none__' ? !j.tid : j.tid === tid) ? gone : keep).push(j));
+  state.jokes = keep;
+  if(CLOUD.on) gone.forEach(j=> cfetch('jokes?id=eq.' + encodeURIComponent(j.id), { method:'DELETE', headers:{ 'Prefer':'return=minimal' } }).catch(()=>{}));
+  if(jokesFilterT === tid) jokesFilterT = '';
+  saveState(); closeModal(); renderJokes();
+  toast('Stage cleared 🧹');
+}
 function renderJokes(){
   const body = $('#jokes-body');
   const inT = j => !jokesFilterT || j.tid === jokesFilterT || (!j.tid && jokesFilterT === '__none__');
@@ -5944,11 +5968,14 @@ function renderJokes(){
   const done = state.jokes.filter(j=>j.done && inT(j)).sort((a,b)=>b.doneTs-a.doneTs);
   const _jc = {};
   (state.jokes||[]).forEach(j=>{ const k = j.tid || '__none__'; _jc[k] = (_jc[k]||0) + 1; });
-  const _chip = (val, label, count)=> `<button class="jtc ${jokesFilterT===val?'on':''}" onclick="jokesFilterT='${val}'; renderJokes()">${label} <span class="n">${count}</span></button>`;
+  const _liveIds = new Set((state.tournaments||[]).map(t=> t.id));
+  const _endName = tid => { const h = (state.history||[]).find(x=> x.tid===tid); return h ? h.name : 'Finished tournament'; };
+  const _chip = (val, label, count, del)=> `<button class="jtc ${jokesFilterT===val?'on':''}" onclick="jokesFilterT='${val}'; renderJokes()">${label} <span class="n">${count}</span>${del ? `<span class="x" title="Tournament over — clear these jokes for good" onclick="event.stopPropagation(); jokesClear('${val}')">✕</span>` : ''}</button>`;
   let html = `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px">
-    ${_chip('', '🎤 All', (state.jokes||[]).length)}
-    ${(state.tournaments||[]).map(t=> _chip(t.id, esc(t.name), _jc[t.id]||0)).join('')}
-    ${_jc['__none__'] ? _chip('__none__', '🕰 Old — no tournament tag', _jc['__none__']) : ''}
+    ${_chip('', '🎤 All', (state.jokes||[]).length, false)}
+    ${(state.tournaments||[]).filter(t=> _jc[t.id]).map(t=> _chip(t.id, esc(t.name), _jc[t.id], false)).join('')}
+    ${Object.keys(_jc).filter(k=> k !== '__none__' && !_liveIds.has(k)).map(k=> _chip(k, '🏁 ' + esc(_endName(k)), _jc[k], true)).join('')}
+    ${_jc['__none__'] ? _chip('__none__', '🕰 Old — no tournament tag', _jc['__none__'], true) : ''}
   </div>`;
   if(!state.jokes.length){
     body.innerHTML = `<div class="empty"><div class="big">🎭</div>The stage is empty… for now.<br>
