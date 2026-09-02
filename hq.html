@@ -592,14 +592,11 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 }
 .mk-lasers line{animation:mklaser .9s infinite alternate}
 @keyframes mklaser{from{opacity:.55}to{opacity:1}}
-.lmore{display:block; width:100%; margin:20px auto 2px; padding:3px; border:none; border-radius:17px; cursor:pointer;
-  background:linear-gradient(270deg,#E1FE38,#FF9D2E,#7CF29C,#FFD449,#E1FE38); background-size:400% 100%; animation:lmflow 4s linear infinite}
-.lmore .in{background:var(--card, #262019); border-radius:14px; padding:14px 18px; display:flex; align-items:center; justify-content:center; gap:10px}
-.lmore .tx{font-size:16.5px; font-weight:900; letter-spacing:-.2px;
-  background:linear-gradient(270deg,#E1FE38,#FF9D2E,#7CF29C,#FFD449,#E1FE38); background-size:400% 100%; animation:lmflow 4s linear infinite;
-  -webkit-background-clip:text; background-clip:text; color:transparent}
-.lmore:hover{filter:brightness(1.12)}
-@keyframes lmflow{from{background-position:0% 50%}to{background-position:400% 50%}}
+.lmore{display:block; width:100%; margin:20px auto 2px; padding:0; border:none; border-radius:16px; cursor:pointer;
+  background:#5463FF; box-shadow:0 3px 0 #3542B8}
+.lmore .in{border-radius:16px; padding:15px 18px; display:flex; align-items:center; justify-content:center; gap:10px}
+.lmore .tx{font-size:16.5px; font-weight:900; letter-spacing:-.2px; color:#fff}
+.lmore:hover{filter:brightness(1.08)}
 .rv-sub{font-size:clamp(21px,2.7vw,32px); font-weight:900; letter-spacing:2.5px; color:#5463FF; margin-bottom:22px}
 .rv-body{font-size:clamp(28px,4.3vw,50px); font-weight:600; line-height:1.45; color:#575048; max-width:1020px; margin:0 auto}
 .rv-img{max-width:min(560px,86vw); max-height:300px; border-radius:16px; margin-top:18px; box-shadow:0 10px 30px rgba(0,0,0,.15)}
@@ -1769,7 +1766,7 @@ function bgmInit(){
 function bgmKick(t){
   const o=AC.createOscillator(), g=AC.createGain();
   o.type='sine'; o.frequency.setValueAtTime(140,t); o.frequency.exponentialRampToValueAtTime(46,t+0.1);
-  g.gain.setValueAtTime(.5,t); g.gain.exponentialRampToValueAtTime(.001,t+0.13);
+  g.gain.setValueAtTime(.4,t); g.gain.exponentialRampToValueAtTime(.001,t+0.13);
   o.connect(g); g.connect(BGM.gain); o.start(t); o.stop(t+0.14);
 }
 function bgmHat(t, vol){
@@ -1781,7 +1778,7 @@ function bgmHat(t, vol){
 function bgmSnare(t){
   const s=AC.createBufferSource(); s.buffer=BGM.noiseBuf;
   const f=AC.createBiquadFilter(); f.type='highpass'; f.frequency.value=1800;
-  const g=AC.createGain(); g.gain.setValueAtTime(.2,t); g.gain.exponentialRampToValueAtTime(.001,t+0.14);
+  const g=AC.createGain(); g.gain.setValueAtTime(.13,t); g.gain.exponentialRampToValueAtTime(.001,t+0.12);
   s.connect(f); f.connect(g); g.connect(BGM.gain); s.start(t); s.stop(t+0.15);
 }
 function bgmBass(t, f){
@@ -1796,29 +1793,60 @@ function bgmLead(t, f, dur=0.16, vol=0.06){
   g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(.001,t+dur);
   o.connect(g); g.connect(BGM.gain); o.start(t); o.stop(t+dur+0.02);
 }
-/* 4-bar loop in C major — I · vi · IV · V, bright and bouncy */
-const BGM_CHORDS = [[261.63,329.63,392.00],[220.00,261.63,329.63],[174.61,220.00,261.63],[196.00,246.94,293.66]];
-const BGM_ROOTS  = [65.41, 55.00, 43.65, 49.00];
-const BGM_ARP    = [0,1,2,1, 2,1,0,1];
+/* ============ BitsoIQ jukebox — 10 gentle arcade loops, auto-rotating ============
+   Each song: 4-bar progression (MIDI), its own tempo, lead voice, groove & density.
+   Softer mix than before; a new song fades in roughly every minute. */
+const _nf = m => 440 * Math.pow(2, (m - 69) / 12);
+const BGM_SONGS = [
+  {name:'Sunny Start',   bpm:128, prog:[[60,64,67],[57,60,64],[53,57,60],[55,59,62]], bass:[36,33,29,31], arp:[0,1,2,1,2,1,0,1], wave:'triangle', lv:.042, hat:2, kick:4, snr:true},
+  {name:'Lo-fi Lagoon',  bpm:96,  prog:[[53,57,60,64],[57,60,64,67],[58,62,65,69],[55,59,62,65]], bass:[29,33,34,31], arp:[0,2,1,3,2,1,0,2], wave:'sine', lv:.05, hat:4, kick:8, snr:false},
+  {name:'Pixel Sunset',  bpm:112, prog:[[57,60,64],[53,57,60],[60,64,67],[55,59,62]], bass:[33,29,36,31], arp:[0,1,2,1,0,2,1,2], wave:'sine', lv:.048, hat:2, kick:4, snr:true},
+  {name:'Neon Drift',    bpm:120, prog:[[50,53,57,60],[55,59,62,65],[60,64,67,71],[57,60,64,67]], bass:[26,31,36,33], arp:[0,1,2,3,2,1,0,1], wave:'triangle', lv:.04, hat:2, kick:4, snr:true},
+  {name:'Cloud Runner',  bpm:124, prog:[[55,59,62],[52,55,59],[48,52,55],[50,54,57]], bass:[31,28,24,26], arp:[0,1,2,1,2,0,1,2], wave:'triangle', lv:.042, hat:2, kick:4, snr:true},
+  {name:'Mellow Mode',   bpm:116, prog:[[50,54,57],[47,50,54],[43,47,50],[45,49,52]], bass:[26,23,19,21], arp:[2,1,0,1,2,1,0,1], wave:'sine', lv:.05, hat:4, kick:4, snr:false},
+  {name:'Arcade Breeze', bpm:126, prog:[[60,64,67],[55,59,62],[57,60,64],[53,57,60]], bass:[36,31,33,29], arp:[0,2,1,2,0,1,2,1], wave:'triangle', lv:.04, hat:2, kick:4, snr:true},
+  {name:'Starlight Save',bpm:108, prog:[[52,55,59],[48,52,55],[55,59,62],[50,54,57]], bass:[28,24,31,26], arp:[0,1,2,1,0,1,2,0], wave:'sine', lv:.05, hat:4, kick:8, snr:false},
+  {name:'Coin Garden',   bpm:122, prog:[[53,57,60],[50,53,57],[46,50,53],[48,52,55]], bass:[29,26,22,24], arp:[0,1,2,1,2,1,0,2], wave:'triangle', lv:.042, hat:2, kick:4, snr:true},
+  {name:'Moon Elevator', bpm:102, prog:[[57,60,64,67],[52,55,59,62],[53,57,60,64],[55,59,62,65]], bass:[33,28,29,31], arp:[0,3,1,2,0,2,1,3], wave:'sine', lv:.052, hat:4, kick:8, snr:false},
+];
+BGM.songI = Math.floor(Math.random() * BGM_SONGS.length);
+BGM.loops = 0;
+function bgmNextSong(){
+  let n; do { n = Math.floor(Math.random() * BGM_SONGS.length); } while(n === BGM.songI && BGM_SONGS.length > 1);
+  BGM.songI = n; BGM.loops = 0;
+}
 function bgmSchedule(){
   try{
-    const eighth = 60/148/2;   /* 148 bpm */
+    const S = BGM_SONGS[BGM.songI];
+    const eighth = 60 / S.bpm / 2;
     while(BGM.next < AC.currentTime + 0.25){
       const s = BGM.step % 64, t = BGM.next;
-      const bar = Math.floor(s/16);
-      if(s % 4 === 0) bgmKick(t);
-      if(s % 16 === 4 || s % 16 === 12) bgmSnare(t);
-      bgmHat(t, s % 2 ? 0.035 : 0.06);
+      const bar = Math.floor(s / 16);
+      if(s % S.kick === 0) bgmKick(t);
+      if(S.snr && (s % 16 === 4 || s % 16 === 12)) bgmSnare(t);
+      if(s % S.hat === 0) bgmHat(t, (s % 4) ? 0.02 : 0.038);
       if(s % 2 === 0){
-        const r = BGM_ROOTS[bar];
-        bgmBass(t, (s % 8 === 6) ? r*1.5 : (s % 4 === 2 ? r*2 : r));
+        const r = _nf(S.bass[bar]);
+        bgmBass(t, (s % 8 === 6) ? r * 1.5 : (s % 4 === 2 ? r * 2 : r));
       }
-      const ch = BGM_CHORDS[bar];
-      bgmLead(t, ch[BGM_ARP[s % 8]] * 2, 0.14, 0.05);
-      if(s % 16 === 0) ch.forEach(f=> bgmLead(t, f, 0.5, 0.03));  /* soft chord pad each bar */
+      const ch = S.prog[bar].map(_nf);
+      if(s % 2 === 0 || S.hat === 2) bgmLeadW(t, ch[S.arp[s % 8] % ch.length] * 2, 0.16, S.lv, S.wave);
+      if(s % 16 === 0) ch.forEach(f=> bgmLeadW(t, f, 0.6, 0.024, 'sine'));   /* soft pad each bar */
       BGM.next += eighth; BGM.step++;
+      if(BGM.step % 64 === 0){
+        BGM.loops++;
+        const barsPerMin = S.bpm / 4;
+        if(BGM.loops >= Math.max(2, Math.round(barsPerMin / 4))) bgmNextSong();  /* ~1 min per song */
+      }
     }
   }catch(e){}
+}
+function bgmLeadW(t, f, dur, vol, wave){
+  const o = AC.createOscillator(), g = AC.createGain(), lp = AC.createBiquadFilter();
+  o.type = wave || 'triangle'; o.frequency.value = f;
+  lp.type = 'lowpass'; lp.frequency.value = 2600;                 /* rounds off the edge — easier on the ears */
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
+  o.connect(lp); lp.connect(g); g.connect(BGM.gain); o.start(t); o.stop(t + dur + 0.02);
 }
 function bgmEnsure(){
   try{
@@ -5860,7 +5888,7 @@ function revealNext(){
 function lmoreHTML(){
   const q = (typeof _rvQ !== 'undefined') ? _rvQ : null;
   if(!q || !q.link) return '';
-  return `<button class="lmore" onclick="window.open(_rvQ.link, '_blank')"><span class="in"><span style="font-size:20px">👀</span><span class="tx">Wanna learn more about this? Click here →</span></span></button>`;
+  return `<button class="lmore" onclick="window.open(_rvQ.link, '_blank')"><span class="in"><span style="font-size:20px">👀</span><span class="tx">Wanna learn more about this topic? →</span></span></button>`;
 }
 function closeReveal(){
   if(revealLocked) return;
