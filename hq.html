@@ -5908,6 +5908,7 @@ function showWinResult(g){
     <div class="mi">🎉</div>
     <h2>Run validated!</h2>
     <p class="mt">Quick fingers <b>and</b> big brain. ${lines[status]}</p>
+    ${lmoreHTML()}
     <div class="mrow">
       ${status==='recorded' ? `<button class="btn ghost" onclick="closeModal(); goTab('admin')">View standings</button>` : ''}
       <button class="btn ghost" onclick="closeModal()">Back to games</button>
