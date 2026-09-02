@@ -577,6 +577,14 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 }
 .mk-lasers line{animation:mklaser .9s infinite alternate}
 @keyframes mklaser{from{opacity:.55}to{opacity:1}}
+.lmore{display:block; width:100%; margin:20px auto 2px; padding:3px; border:none; border-radius:17px; cursor:pointer;
+  background:linear-gradient(270deg,#E1FE38,#FF9D2E,#7CF29C,#FFD449,#E1FE38); background-size:400% 100%; animation:lmflow 4s linear infinite}
+.lmore .in{background:var(--card, #262019); border-radius:14px; padding:14px 18px; display:flex; align-items:center; justify-content:center; gap:10px}
+.lmore .tx{font-size:16.5px; font-weight:900; letter-spacing:-.2px;
+  background:linear-gradient(270deg,#E1FE38,#FF9D2E,#7CF29C,#FFD449,#E1FE38); background-size:400% 100%; animation:lmflow 4s linear infinite;
+  -webkit-background-clip:text; background-clip:text; color:transparent}
+.lmore:hover{filter:brightness(1.12)}
+@keyframes lmflow{from{background-position:0% 50%}to{background-position:400% 50%}}
 .rv-sub{font-size:clamp(21px,2.7vw,32px); font-weight:900; letter-spacing:2.5px; color:#5463FF; margin-bottom:22px}
 .rv-body{font-size:clamp(28px,4.3vw,50px); font-weight:600; line-height:1.45; color:#575048; max-width:1020px; margin:0 auto}
 .rv-img{max-width:min(560px,86vw); max-height:300px; border-radius:16px; margin-top:18px; box-shadow:0 10px 30px rgba(0,0,0,.15)}
@@ -853,7 +861,7 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 .cdpill{font-variant-numeric:tabular-nums}
 .arena-grid{display:grid; grid-template-columns:7fr 5fr; gap:22px; align-items:stretch}
 #ar-right{position:relative; min-height:max(560px, calc(100vh - 340px))}
-#ar-right .rwrap{position:absolute; inset:0; overflow-y:auto; display:flex; flex-direction:column; padding-right:2px; scrollbar-width:thin; scrollbar-color:var(--line) transparent}
+#ar-right .rwrap{position:absolute; inset:0; overflow-y:auto; display:flex; flex-direction:column; padding:0 2px 8px 2px; scrollbar-width:thin; scrollbar-color:var(--line) transparent}
 #ar-right .rwrap::-webkit-scrollbar{width:8px}
 #ar-right .rwrap::-webkit-scrollbar-thumb{background:var(--line); border-radius:99px}
 #ar-right .rwrap > .card:first-child{flex:1 0 auto; display:flex; flex-direction:column; min-height:340px}
@@ -3943,15 +3951,15 @@ const GAMES = [
       if(!dead){
         t += dt; api.set(Math.round(t*10)/10);
         /* friendlier physics — the challenge is the balance itself, not wall tricks */
-        const k = 1.35 + t*0.055;                                  /* softer gravity, slower ramp */
-        const nx = hx + (targetX-hx)*Math.min(1, dt*20);
+        const k = 1.0 + t*0.038;                                   /* even softer gravity, slower ramp */
+        const nx = hx + (targetX-hx)*Math.min(1, dt*26);           /* base follows the mouse faster */
         const vx = (nx-hx)/Math.max(dt,1e-4);
         const ax = clamp((vx-pvx)/Math.max(dt,1e-4), -20000, 20000);
         pvx = vx; hx = nx;
-        om += ( k*Math.sin(th) - (ax/L)*Math.cos(th)*0.44 ) * dt;  /* inverted pendulum, stronger control */
-        om += rand(-1,1)*dt*(0.03 + t*0.009);                      /* gentler wind */
-        om *= (1 - 0.16*dt);                                       /* more damping = calmer sword */
-        om = clamp(om, -2.4, 2.4);
+        om += ( k*Math.sin(th) - (ax/L)*Math.cos(th)*0.58 ) * dt;  /* inverted pendulum, much stronger control */
+        om += rand(-1,1)*dt*(0.016 + t*0.006);                     /* barely-there wind */
+        om *= (1 - 0.30*dt);                                       /* heavy damping = calm, forgiving sword */
+        om = clamp(om, -1.9, 1.9);
         th += om*dt;
         th = clamp(th, -1.34, 1.34);
         /* no wall saves — past ~72° the blade is gone, wherever it is */
@@ -5920,6 +5928,11 @@ function revealNext(){
   if(_rvIdx < _rvSteps.length - 1){ _rvIdx++; revealPaint(); sTap(); }
   else closeReveal();
 }
+function lmoreHTML(){
+  const q = (typeof _rvQ !== 'undefined') ? _rvQ : null;
+  if(!q || !q.link) return '';
+  return `<button class="lmore" onclick="window.open(_rvQ.link, '_blank')"><span class="in"><span style="font-size:20px">👀</span><span class="tx">Wanna learn more about this? Click here →</span></span></button>`;
+}
 function closeReveal(){
   if(revealLocked) return;
   $('#reveal').classList.add('hidden');
@@ -5966,6 +5979,7 @@ function showWinResult(g){
     <div class="mi">🎉</div>
     <h2>Run validated!</h2>
     <p class="mt">Quick fingers <b>and</b> big brain. ${lines[status]}</p>
+    ${lmoreHTML()}
     <div class="mrow">
       ${status==='recorded' ? `<button class="btn ghost" onclick="closeModal(); goTab('admin')">View standings</button>` : ''}
       <button class="btn ghost" onclick="closeModal()">Back to games</button>
@@ -7027,6 +7041,7 @@ function showWinResult(g){
     <div class="mi">🎉</div>
     <h2>Run validated!</h2>
     <p class="mt">Quick fingers <b>and</b> big brain. ${lines[status]}</p>
+    ${lmoreHTML()}
     <div class="mrow">
       ${status==='recorded' && canRescue() ? `<button class="btn ghost" onclick='closeModal(); showSecondChance("${g.id}")'>🎤 Replay once — costs a joke</button>` : ''}
       ${status==='recorded' ? `<button class="btn ghost" onclick="closeModal(); cuDate=null; setTab('points')">See the board</button>` : ''}
