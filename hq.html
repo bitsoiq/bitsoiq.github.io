@@ -6554,7 +6554,7 @@ function useHistQuestions(hid){
   toast('Your next tournament starts with that question bank 📚 — create it now.');
 }
 function histInsights(hid){
-  const h = (state.history||[]).find(x=> x.id===hid); if(!h) return;
+  const h = histFind(hid); if(!h) return;
   const log = h.trivia || [];
   const st = h.standings || [];
   const qmap = {};
@@ -6581,7 +6581,7 @@ function histInsights(hid){
   el.innerHTML = `
     <button class="hins-x" onclick="document.getElementById('hins').remove()">✕</button>
     <div class="hins-wrap">
-      <div class="qtag">📊 TOURNAMENT INSIGHTS — FULL REPORT</div>
+      <div class="qtag">📊 TOURNAMENT INSIGHTS — ${h.live ? 'LIVE RIGHT NOW 🟢' : 'FULL REPORT'}</div>
       <h1 style="margin:4px 0 2px">${esc(h.name)}</h1>
       <div style="font-weight:800; color:var(--ink3); font-size:13.5px">${fmtDay(h.start)} → ${fmtDay(h.end)} · code ${esc(h.code||'—')}</div>
       <div class="hins-chips">
@@ -6630,8 +6630,27 @@ function histInsights(hid){
     if(box) box.innerHTML = '<div class="empty" style="padding:14px">Feedback tagging starts with the new version.</div>';
   }
 }
+function liveSnapshot(t){
+  const today = tKey(t);
+  const gds = (t.days||[]).filter(d=> d.gameId && d.date <= today);
+  return {
+    id: t.id, tid: t.id, name: t.name, code: t.code, live: true,
+    start: (t.days && t.days.length) ? t.days[0].date : today,
+    end: (t.days && t.days.length) ? t.days[t.days.length-1].date : today,
+    standings: standings(t).map(s2=> ({name:s2.name, avatar:s2.avatar, pts:s2.pts, days:s2.days})),
+    days: gds.map(d=> ({date:d.date, gameName:(gameById(d.gameId)||{name:'?'}).name,
+      rows: dayRows(t, d.date).map(r=> ({name:r.name, avatar:r.avatar, email:r.email||null, disp:(r.g?r.g.fmt(r.value):String(r.value)), pts:r.pts, rank:r.rank}))})),
+    trivia: (state.triviaLog||[]).filter(e=> e.tid===t.id).map(e=> ({date:e.date, name:e.name, email:e.email||null, qid:e.qid, q:e.q, ok:e.ok})),
+  };
+}
+function histFind(hid){
+  const h = (state.history||[]).find(x=> x.id===hid);
+  if(h) return h;
+  const t = (state.tournaments||[]).find(x=> x.id===hid);
+  return t ? liveSnapshot(t) : null;
+}
 function histCopy(hid){
-  const h = (state.history||[]).find(x=> x.id===hid); if(!h) return;
+  const h = histFind(hid); if(!h) return;
   const log = h.trivia || [];
   const map = {};
   log.forEach(e=>{ const m = map[e.qid] = map[e.qid] || {a:0, c:0, q:e.q}; m.a++; if(e.ok) m.c++; });
@@ -7271,13 +7290,23 @@ function renderHistory(){
     if(_hseen.has(k)) return false;
     _hseen.add(k); return true;
   });
+  const liveT = (state.tournaments||[]).filter(t=> (t.days||[]).some(d=> d.gameId && d.date <= tKey(t)));
+  const liveHTML = liveT.length ? `<div class="card" style="margin-bottom:18px">
+    <h3>🟢 Live now — real-time insights</h3>
+    <p class="cardhint">The same full report as finished tournaments, computed live: standings, per-question accuracy, per-player performance with emails, and feedback.</p>
+    ${liveT.map(t=>`<div class="lb-row">
+      <div style="flex:1; min-width:0"><div><b>${esc(t.name)}</b> <span class="pill neon" style="font-size:10px">LIVE</span></div>
+      <div class="sub">${fmtDay(t.days[0].date)} → ${fmtDay(t.days[t.days.length-1].date)} · code ${esc(t.code||'—')}</div></div>
+      <button class="btn sm" onclick="histInsights('${t.id}')">📊 Live insights</button>
+    </div>`).join('')}
+  </div>` : '';
   if(!hist.length){
-    el.innerHTML = `<div class="card"><h3>📜 Tournament history</h3>
+    el.innerHTML = liveHTML + `<div class="card"><h3>📜 Tournament history</h3>
       <div class="empty" style="padding:34px"><div class="big">📜</div>No finished tournaments yet.<br>
       <span style="font-size:12.5px">When a tournament ends (or you end it manually), its final standings land here forever.</span></div></div>`;
     return;
   }
-  el.innerHTML = `<div class="admin-grid">` + hist.map(h=>{
+  el.innerHTML = liveHTML + `<div class="admin-grid">` + hist.map(h=>{
     const st = h.standings || [];
     return `<div class="card">
       <h3>🏁 ${esc(h.name)} <span class="pill dim">${fmtDay(h.start)} → ${fmtDay(h.end)}</span></h3>

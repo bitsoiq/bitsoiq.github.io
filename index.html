@@ -637,12 +637,26 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 .rv-fact b{color:#5463FF}
 .rv-fact .hl{color:#5463FF}
 
-.dayblk{background:var(--card2); border:1.5px solid var(--line); border-radius:15px; padding:11px 14px; margin-top:10px; transition:border-color .15s}
+.dayblk{background:var(--card2); border:1.5px solid var(--line); border-radius:16px; padding:15px 17px; margin-top:14px; transition:border-color .15s}
 .dayblk.open{border-color:var(--neon)}
-.dayhead{display:flex; align-items:center; gap:12px; cursor:pointer}
-.dayhead .dg{font-size:26px; flex:none; width:34px; text-align:center}
-.dayhead .dg svg{width:30px; height:30px}
-.dayhead .chev{font-size:10px; color:var(--ink3); font-weight:900}
+.dayhead{display:flex; align-items:flex-start; gap:14px; cursor:pointer}
+.dayhead .dg{flex:none; width:36px; text-align:center; margin-top:2px}
+.dayhead .dg svg{width:32px; height:32px}
+.dayhead .ddate{font-size:14.5px}
+.dayhead .dgame{font-size:12px; font-weight:900; color:#7CD5FF; letter-spacing:.4px; text-transform:uppercase; margin-top:2px}
+.dpills{display:flex; gap:6px; flex-wrap:wrap; margin-top:8px}
+.dpill{font-size:11px; font-weight:900; border-radius:99px; padding:3.5px 10px; letter-spacing:.2px}
+.dpill.rank{background:rgba(225,254,56,.16); color:var(--neon)}
+.dpill.score{background:rgba(124,213,255,.14); color:#7CD5FF}
+.dpill.pts{background:rgba(255,212,73,.15); color:#FFD449}
+.dpill.boost{background:rgba(179,157,255,.16); color:#B39DFF}
+.dpill.warn{background:rgba(255,185,56,.15); color:#FFB938}
+.dpill.dim{background:rgba(255,255,255,.06); color:var(--ink3)}
+.dwin{text-align:right; flex:none; min-width:92px}
+.dwin .wlbl{font-size:9.5px; font-weight:900; letter-spacing:1.6px; text-transform:uppercase; color:#F0B429}
+.dwin .wnm{font-weight:900; font-size:13.5px; margin-top:2px}
+.dwin .wsc{font-size:12px; font-weight:800; color:var(--ink3)}
+.dwin .chev{font-size:10px; color:var(--ink3); font-weight:900}
 .cucard{background:linear-gradient(135deg, #3A2B12, #2C2418); border:1.5px solid #C98A2B; border-radius:20px; padding:18px 20px; margin-bottom:16px; box-shadow:0 4px 0 #1F1809; animation:cupop .4s cubic-bezier(.2,1.4,.4,1)}
 @keyframes cupop{from{transform:scale(.96); opacity:0}to{transform:scale(1); opacity:1}}
 .cucard .cu-head{display:flex; gap:12px; align-items:flex-start}
@@ -6928,28 +6942,29 @@ function pointsDaysHTML(t){
     const win = rows[0];
     const open = pointsDayOpen === d.date;
     const isToday = d.date === today;
-    let mine;
-    if(me) mine = `<b style="color:var(--neon)">#${me.rank}</b> of ${rows.length} · ${me.g ? me.g.fmt(me.value) : me.value} · <b>${me.pts} pts</b>${me.tags && me.tags.length ? ' <span class="pill dim" style="font-size:10px">' + me.tags.join(' ') + '</span>' : ''}`;
-    else if(mis.has(d.date)) mine = `<span style="color:#FFB938; font-weight:800">⏰ Missed — still recoverable in the arena</span>`;
-    else if(isToday) mine = `<span style="color:var(--ink3)">Not played yet — the day is live</span>`;
-    else mine = `<span style="color:var(--ink3)">Didn't play — 0 pts</span>`;
+    let pills;
+    if(me) pills = `<span class="dpill rank">#${me.rank} of ${rows.length}</span><span class="dpill score">${me.g ? me.g.fmt(me.value) : me.value}</span><span class="dpill pts">${me.pts} pts</span>${(me.tags||[]).map(x=> `<span class="dpill boost">${x.replace(/[^\x20-\x7E%×+.0-9A-Za-z\-']/g,'').trim()}</span>`).join('')}`;
+    else if(mis.has(d.date)) pills = `<span class="dpill warn">Missed — recoverable in the arena</span>`;
+    else if(isToday) pills = `<span class="dpill dim">Not played yet — the day is live</span>`;
+    else pills = `<span class="dpill dim">Didn't play · 0 pts</span>`;
     return `<div class="dayblk ${open?'open':''}">
       <div class="dayhead" onclick="pointsDayToggle('${d.date}')">
-        <span class="dg">${g ? ICONS[g.id] : '🎮'}</span>
+        <span class="dg">${g ? ICONS[g.id] : ''}</span>
         <div style="flex:1; min-width:0">
-          <div style="font-weight:900">${fmtDay(d.date)}${isToday ? ' <span class="pill neon" style="font-size:10px">TODAY</span>' : ''} · ${g ? esc(g.name) : '?'}</div>
-          <div class="sub" style="margin-top:2px">${mine}</div>
+          <div class="ddate"><b>${fmtDay(d.date)}</b>${isToday ? ' <span class="pill neon" style="font-size:10px">TODAY</span>' : ''}</div>
+          <div class="dgame">${g ? esc(g.name) : '?'}</div>
+          <div class="dpills">${pills}</div>
         </div>
-        <div style="text-align:right; flex:none">
-          ${win ? `<div class="sub">👑 ${esc(win.name)}</div><div style="font-weight:900; font-size:12.5px">${win.g ? win.g.fmt(win.value) : win.value}</div>` : '<div class="sub">no runs</div>'}
+        <div class="dwin">
+          ${win ? `<div class="wlbl">Best today</div><div class="wnm">${esc(win.name)}</div><div class="wsc">${win.g ? win.g.fmt(win.value) : win.value}</div>` : `<div class="wlbl">no runs</div>`}
           <span class="chev">${open ? '▲' : '▼'}</span>
         </div>
       </div>
       ${open ? (rows.length ? rows.map(r=> `
-        <div class="lb-row ${r.name===player.name?'me':''}" style="margin:6px 0 0">
+        <div class="lb-row ${r.name===player.name?'me':''}" style="margin:8px 0 0">
           <div class="rk">${r.rank}</div>
           <span class="av">${avatarHTML(r.avatar)}</span>
-          <div><div>${esc(r.name)}${r.name===player.name?' (you)':''}</div><div class="sub">${r.g ? r.g.fmt(r.value) : r.value}${r.tags && r.tags.length ? ' · ' + r.tags.join(' ') : ''}</div></div>
+          <div><div><b>${esc(r.name)}${r.name===player.name?' (you)':''}</b></div><div class="sub">${r.g ? r.g.fmt(r.value) : r.value}${r.tags && r.tags.length ? ' · ' + r.tags.join(' ') : ''}</div></div>
           <div class="pts">${r.pts} pts</div>
         </div>`).join('') : '<div class="empty" style="padding:14px">Nobody played this day.</div>') : ''}
     </div>`;
