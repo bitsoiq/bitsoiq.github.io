@@ -637,6 +637,12 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 .rv-fact b{color:#5463FF}
 .rv-fact .hl{color:#5463FF}
 
+.dayblk{background:var(--card2); border:1.5px solid var(--line); border-radius:15px; padding:11px 14px; margin-top:10px; transition:border-color .15s}
+.dayblk.open{border-color:var(--neon)}
+.dayhead{display:flex; align-items:center; gap:12px; cursor:pointer}
+.dayhead .dg{font-size:26px; flex:none; width:34px; text-align:center}
+.dayhead .dg svg{width:30px; height:30px}
+.dayhead .chev{font-size:10px; color:var(--ink3); font-weight:900}
 .cucard{background:linear-gradient(135deg, #3A2B12, #2C2418); border:1.5px solid #C98A2B; border-radius:20px; padding:18px 20px; margin-bottom:16px; box-shadow:0 4px 0 #1F1809; animation:cupop .4s cubic-bezier(.2,1.4,.4,1)}
 @keyframes cupop{from{transform:scale(.96); opacity:0}to{transform:scale(1); opacity:1}}
 .cucard .cu-head{display:flex; gap:12px; align-items:flex-start}
@@ -996,7 +1002,10 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
     <input id="su-name" class="tinput ctr" type="text" placeholder="Your name" maxlength="20" autocomplete="off">
     <div class="avgrid" id="su-avatars"></div>
     <div id="su-err" class="err"></div>
-    <button class="btn big" style="width:100%" onclick="finishSetup()">Enter the arena</button>
+    <div class="mrow" style="margin-top:18px">
+      <button class="btn ghost" onclick="setupBack()">← Back</button>
+      <button class="btn big" style="flex:1" onclick="finishSetup()">Enter the arena</button>
+    </div>
   </div>
 </div>
 
@@ -1875,16 +1884,16 @@ function bgmLead(t, f, dur=0.16, vol=0.06){
    Softer mix than before; a new song fades in roughly every minute. */
 const _nf = m => 440 * Math.pow(2, (m - 69) / 12);
 const BGM_SONGS = [
-  {name:'Sunny Start',   bpm:128, prog:[[60,64,67],[57,60,64],[53,57,60],[55,59,62]], bass:[36,33,29,31], arp:[0,1,2,1,2,1,0,1], wave:'triangle', lv:.042, hat:2, kick:4, snr:true},
-  {name:'Lo-fi Lagoon',  bpm:96,  prog:[[53,57,60,64],[57,60,64,67],[58,62,65,69],[55,59,62,65]], bass:[29,33,34,31], arp:[0,2,1,3,2,1,0,2], wave:'sine', lv:.05, hat:4, kick:8, snr:false},
-  {name:'Pixel Sunset',  bpm:112, prog:[[57,60,64],[53,57,60],[60,64,67],[55,59,62]], bass:[33,29,36,31], arp:[0,1,2,1,0,2,1,2], wave:'sine', lv:.048, hat:2, kick:4, snr:true},
-  {name:'Neon Drift',    bpm:120, prog:[[50,53,57,60],[55,59,62,65],[60,64,67,71],[57,60,64,67]], bass:[26,31,36,33], arp:[0,1,2,3,2,1,0,1], wave:'triangle', lv:.04, hat:2, kick:4, snr:true},
-  {name:'Cloud Runner',  bpm:124, prog:[[55,59,62],[52,55,59],[48,52,55],[50,54,57]], bass:[31,28,24,26], arp:[0,1,2,1,2,0,1,2], wave:'triangle', lv:.042, hat:2, kick:4, snr:true},
-  {name:'Mellow Mode',   bpm:116, prog:[[50,54,57],[47,50,54],[43,47,50],[45,49,52]], bass:[26,23,19,21], arp:[2,1,0,1,2,1,0,1], wave:'sine', lv:.05, hat:4, kick:4, snr:false},
-  {name:'Arcade Breeze', bpm:126, prog:[[60,64,67],[55,59,62],[57,60,64],[53,57,60]], bass:[36,31,33,29], arp:[0,2,1,2,0,1,2,1], wave:'triangle', lv:.04, hat:2, kick:4, snr:true},
-  {name:'Starlight Save',bpm:108, prog:[[52,55,59],[48,52,55],[55,59,62],[50,54,57]], bass:[28,24,31,26], arp:[0,1,2,1,0,1,2,0], wave:'sine', lv:.05, hat:4, kick:8, snr:false},
-  {name:'Coin Garden',   bpm:122, prog:[[53,57,60],[50,53,57],[46,50,53],[48,52,55]], bass:[29,26,22,24], arp:[0,1,2,1,2,1,0,2], wave:'triangle', lv:.042, hat:2, kick:4, snr:true},
-  {name:'Moon Elevator', bpm:102, prog:[[57,60,64,67],[52,55,59,62],[53,57,60,64],[55,59,62,65]], bass:[33,28,29,31], arp:[0,3,1,2,0,2,1,3], wave:'sine', lv:.052, hat:4, kick:8, snr:false},
+  {name:'Sunny Start',  bpm:132, prog:[[60,64,67,72],[57,60,64,69],[53,57,60,65],[55,59,62,67]], bass:[36,33,29,31], arp:[0,1,2,3,2,1,0,2], wave:'triangle', lv:.042, hat:2, kick:4, snr:true},
+  {name:'Beach Day',    bpm:138, prog:[[53,57,60,65],[58,62,65,70],[60,64,67,72],[53,57,60,65]], bass:[29,34,36,29], arp:[0,2,1,3,0,2,3,1], wave:'triangle', lv:.04, hat:2, kick:4, snr:true},
+  {name:'Bubble Pop',   bpm:144, prog:[[55,59,62,67],[60,64,67,72],[62,66,69,74],[55,59,62,67]], bass:[31,36,38,31], arp:[0,1,2,3,3,2,1,0], wave:'triangle', lv:.038, hat:2, kick:4, snr:true},
+  {name:'Sky Ride',     bpm:128, prog:[[50,54,57,62],[55,59,62,67],[57,61,64,69],[62,66,69,74]], bass:[26,31,33,38], arp:[0,1,2,1,3,2,1,2], wave:'triangle', lv:.042, hat:2, kick:4, snr:true},
+  {name:'Happy Hodl',   bpm:134, prog:[[60,64,67,72],[65,69,72,77],[55,59,62,67],[60,64,67,72]], bass:[36,41,31,36], arp:[0,2,3,2,0,1,2,3], wave:'triangle', lv:.04, hat:2, kick:4, snr:true},
+  {name:'Coin Rush',    bpm:148, prog:[[57,61,64,69],[62,66,69,74],[64,68,71,76],[57,61,64,69]], bass:[33,38,40,33], arp:[0,1,3,1,2,3,1,0], wave:'triangle', lv:.036, hat:2, kick:4, snr:true},
+  {name:'Pixel Picnic', bpm:124, prog:[[60,64,67,72],[55,59,62,67],[57,60,64,69],[53,57,60,65]], bass:[36,31,33,29], arp:[0,2,1,2,3,2,1,2], wave:'triangle', lv:.044, hat:2, kick:4, snr:true},
+  {name:'Green Candle', bpm:136, prog:[[52,56,59,64],[57,61,64,69],[59,63,66,71],[52,56,59,64]], bass:[28,33,35,28], arp:[0,1,2,3,0,2,1,3], wave:'triangle', lv:.04, hat:2, kick:4, snr:true},
+  {name:'Confetti Run', bpm:142, prog:[[58,62,65,70],[63,67,70,75],[65,69,72,77],[58,62,65,70]], bass:[34,39,41,34], arp:[0,3,2,3,1,2,3,0], wave:'triangle', lv:.038, hat:2, kick:4, snr:true},
+  {name:'Golden Hour',  bpm:120, prog:[[53,57,60,65],[60,64,67,72],[58,62,65,70],[60,64,67,72]], bass:[29,36,34,36], arp:[0,1,2,3,2,3,1,2], wave:'triangle', lv:.045, hat:2, kick:4, snr:true},
 ];
 BGM.songI = Math.floor(Math.random() * BGM_SONGS.length);
 BGM.loops = 0;
@@ -6399,6 +6408,15 @@ function finishSetup(){
   else goHome();
 }
 function editProfile(){ editing = true; buildAvGrid(); show('scr-setup'); }
+function setupBack(){
+  /* descarta cambios sin guardar y regresa a donde estabas */
+  $('#su-err').textContent = '';
+  if(editing){ editing = false; goHome(); return; }
+  if(joinPending){ joinPending = null; }
+  if(player.name && player.avatar) goHome();
+  else show('scr-landing');
+  sTap();
+}
 function paintChips(){
   const av = avatarHTML(player.avatar), nm = esc(player.name||'Player');
   [['chip-av','chip-name'],['chip-av2','chip-name2']].forEach(([a,n])=>{
@@ -6874,9 +6892,10 @@ function setPointsView(v){ pointsView = v; const t = curT(); if(t) renderSide(t)
 function pointsHTML(t){
   const nav = `<div class="tabs2" style="margin:2px 0 14px">
     <button class="${pointsView==='today'?'on':''}" onclick="setPointsView('today')">📊 Today</button>
-    <button class="${pointsView==='overall'?'on':''}" onclick="setPointsView('overall')">🏆 Overall standings</button>
+    <button class="${pointsView==='overall'?'on':''}" onclick="setPointsView('overall')">🏆 Overall</button>
+    <button class="${pointsView==='days'?'on':''}" onclick="setPointsView('days')">📅 My days</button>
   </div>`;
-  return nav + (pointsView === 'today' ? pointsTodayHTML(t) : pointsOverallHTML(t));
+  return nav + (pointsView === 'today' ? pointsTodayHTML(t) : pointsView === 'days' ? pointsDaysHTML(t) : pointsOverallHTML(t));
 }
 function pointsTodayHTML(t){
   const rows = dayRows(t, tKey(t));
@@ -6892,6 +6911,49 @@ function pointsTodayHTML(t){
       <div class="pts">+${r.pts} pts</div>
     </div>`).join('')
     : `<div class="empty" style="padding:20px"><div class="big">🕹</div>Nobody's on the board yet — go first.</div>`;
+  return html;
+}
+let pointsDayOpen = null;
+function pointsDayToggle(d){ pointsDayOpen = pointsDayOpen === d ? null : d; const t = curT(); if(t) renderSide(t); sTap(); }
+function pointsDaysHTML(t){
+  const today = tKey(t);
+  const gds = (t.days||[]).filter(d=> d.gameId && d.date <= today).reverse();
+  let html = `<h3 style="margin-bottom:4px">📅 Day by day <span class="pill dim">tap a day for the full board</span></h3>`;
+  if(!gds.length) return html + `<div class="empty" style="padding:30px"><div class="big">🌱</div>No game days yet — come back after day one.</div>`;
+  const mis = new Set(cuMissed(t));
+  html += gds.map(d=>{
+    const rows = dayRows(t, d.date);
+    const g = gameById(d.gameId);
+    const me = rows.find(r=> r.name===player.name);
+    const win = rows[0];
+    const open = pointsDayOpen === d.date;
+    const isToday = d.date === today;
+    let mine;
+    if(me) mine = `<b style="color:var(--neon)">#${me.rank}</b> of ${rows.length} · ${me.g ? me.g.fmt(me.value) : me.value} · <b>${me.pts} pts</b>${me.tags && me.tags.length ? ' <span class="pill dim" style="font-size:10px">' + me.tags.join(' ') + '</span>' : ''}`;
+    else if(mis.has(d.date)) mine = `<span style="color:#FFB938; font-weight:800">⏰ Missed — still recoverable in the arena</span>`;
+    else if(isToday) mine = `<span style="color:var(--ink3)">Not played yet — the day is live</span>`;
+    else mine = `<span style="color:var(--ink3)">Didn't play — 0 pts</span>`;
+    return `<div class="dayblk ${open?'open':''}">
+      <div class="dayhead" onclick="pointsDayToggle('${d.date}')">
+        <span class="dg">${g ? ICONS[g.id] : '🎮'}</span>
+        <div style="flex:1; min-width:0">
+          <div style="font-weight:900">${fmtDay(d.date)}${isToday ? ' <span class="pill neon" style="font-size:10px">TODAY</span>' : ''} · ${g ? esc(g.name) : '?'}</div>
+          <div class="sub" style="margin-top:2px">${mine}</div>
+        </div>
+        <div style="text-align:right; flex:none">
+          ${win ? `<div class="sub">👑 ${esc(win.name)}</div><div style="font-weight:900; font-size:12.5px">${win.g ? win.g.fmt(win.value) : win.value}</div>` : '<div class="sub">no runs</div>'}
+          <span class="chev">${open ? '▲' : '▼'}</span>
+        </div>
+      </div>
+      ${open ? (rows.length ? rows.map(r=> `
+        <div class="lb-row ${r.name===player.name?'me':''}" style="margin:6px 0 0">
+          <div class="rk">${r.rank}</div>
+          <span class="av">${avatarHTML(r.avatar)}</span>
+          <div><div>${esc(r.name)}${r.name===player.name?' (you)':''}</div><div class="sub">${r.g ? r.g.fmt(r.value) : r.value}${r.tags && r.tags.length ? ' · ' + r.tags.join(' ') : ''}</div></div>
+          <div class="pts">${r.pts} pts</div>
+        </div>`).join('') : '<div class="empty" style="padding:14px">Nobody played this day.</div>') : ''}
+    </div>`;
+  }).join('');
   return html;
 }
 function pointsOverallHTML(t){

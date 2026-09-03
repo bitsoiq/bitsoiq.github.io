@@ -1798,16 +1798,16 @@ function bgmLead(t, f, dur=0.16, vol=0.06){
    Softer mix than before; a new song fades in roughly every minute. */
 const _nf = m => 440 * Math.pow(2, (m - 69) / 12);
 const BGM_SONGS = [
-  {name:'Sunny Start',   bpm:128, prog:[[60,64,67],[57,60,64],[53,57,60],[55,59,62]], bass:[36,33,29,31], arp:[0,1,2,1,2,1,0,1], wave:'triangle', lv:.042, hat:2, kick:4, snr:true},
-  {name:'Lo-fi Lagoon',  bpm:96,  prog:[[53,57,60,64],[57,60,64,67],[58,62,65,69],[55,59,62,65]], bass:[29,33,34,31], arp:[0,2,1,3,2,1,0,2], wave:'sine', lv:.05, hat:4, kick:8, snr:false},
-  {name:'Pixel Sunset',  bpm:112, prog:[[57,60,64],[53,57,60],[60,64,67],[55,59,62]], bass:[33,29,36,31], arp:[0,1,2,1,0,2,1,2], wave:'sine', lv:.048, hat:2, kick:4, snr:true},
-  {name:'Neon Drift',    bpm:120, prog:[[50,53,57,60],[55,59,62,65],[60,64,67,71],[57,60,64,67]], bass:[26,31,36,33], arp:[0,1,2,3,2,1,0,1], wave:'triangle', lv:.04, hat:2, kick:4, snr:true},
-  {name:'Cloud Runner',  bpm:124, prog:[[55,59,62],[52,55,59],[48,52,55],[50,54,57]], bass:[31,28,24,26], arp:[0,1,2,1,2,0,1,2], wave:'triangle', lv:.042, hat:2, kick:4, snr:true},
-  {name:'Mellow Mode',   bpm:116, prog:[[50,54,57],[47,50,54],[43,47,50],[45,49,52]], bass:[26,23,19,21], arp:[2,1,0,1,2,1,0,1], wave:'sine', lv:.05, hat:4, kick:4, snr:false},
-  {name:'Arcade Breeze', bpm:126, prog:[[60,64,67],[55,59,62],[57,60,64],[53,57,60]], bass:[36,31,33,29], arp:[0,2,1,2,0,1,2,1], wave:'triangle', lv:.04, hat:2, kick:4, snr:true},
-  {name:'Starlight Save',bpm:108, prog:[[52,55,59],[48,52,55],[55,59,62],[50,54,57]], bass:[28,24,31,26], arp:[0,1,2,1,0,1,2,0], wave:'sine', lv:.05, hat:4, kick:8, snr:false},
-  {name:'Coin Garden',   bpm:122, prog:[[53,57,60],[50,53,57],[46,50,53],[48,52,55]], bass:[29,26,22,24], arp:[0,1,2,1,2,1,0,2], wave:'triangle', lv:.042, hat:2, kick:4, snr:true},
-  {name:'Moon Elevator', bpm:102, prog:[[57,60,64,67],[52,55,59,62],[53,57,60,64],[55,59,62,65]], bass:[33,28,29,31], arp:[0,3,1,2,0,2,1,3], wave:'sine', lv:.052, hat:4, kick:8, snr:false},
+  {name:'Sunny Start',  bpm:132, prog:[[60,64,67,72],[57,60,64,69],[53,57,60,65],[55,59,62,67]], bass:[36,33,29,31], arp:[0,1,2,3,2,1,0,2], wave:'triangle', lv:.042, hat:2, kick:4, snr:true},
+  {name:'Beach Day',    bpm:138, prog:[[53,57,60,65],[58,62,65,70],[60,64,67,72],[53,57,60,65]], bass:[29,34,36,29], arp:[0,2,1,3,0,2,3,1], wave:'triangle', lv:.04, hat:2, kick:4, snr:true},
+  {name:'Bubble Pop',   bpm:144, prog:[[55,59,62,67],[60,64,67,72],[62,66,69,74],[55,59,62,67]], bass:[31,36,38,31], arp:[0,1,2,3,3,2,1,0], wave:'triangle', lv:.038, hat:2, kick:4, snr:true},
+  {name:'Sky Ride',     bpm:128, prog:[[50,54,57,62],[55,59,62,67],[57,61,64,69],[62,66,69,74]], bass:[26,31,33,38], arp:[0,1,2,1,3,2,1,2], wave:'triangle', lv:.042, hat:2, kick:4, snr:true},
+  {name:'Happy Hodl',   bpm:134, prog:[[60,64,67,72],[65,69,72,77],[55,59,62,67],[60,64,67,72]], bass:[36,41,31,36], arp:[0,2,3,2,0,1,2,3], wave:'triangle', lv:.04, hat:2, kick:4, snr:true},
+  {name:'Coin Rush',    bpm:148, prog:[[57,61,64,69],[62,66,69,74],[64,68,71,76],[57,61,64,69]], bass:[33,38,40,33], arp:[0,1,3,1,2,3,1,0], wave:'triangle', lv:.036, hat:2, kick:4, snr:true},
+  {name:'Pixel Picnic', bpm:124, prog:[[60,64,67,72],[55,59,62,67],[57,60,64,69],[53,57,60,65]], bass:[36,31,33,29], arp:[0,2,1,2,3,2,1,2], wave:'triangle', lv:.044, hat:2, kick:4, snr:true},
+  {name:'Green Candle', bpm:136, prog:[[52,56,59,64],[57,61,64,69],[59,63,66,71],[52,56,59,64]], bass:[28,33,35,28], arp:[0,1,2,3,0,2,1,3], wave:'triangle', lv:.04, hat:2, kick:4, snr:true},
+  {name:'Confetti Run', bpm:142, prog:[[58,62,65,70],[63,67,70,75],[65,69,72,77],[58,62,65,70]], bass:[34,39,41,34], arp:[0,3,2,3,1,2,3,0], wave:'triangle', lv:.038, hat:2, kick:4, snr:true},
+  {name:'Golden Hour',  bpm:120, prog:[[53,57,60,65],[60,64,67,72],[58,62,65,70],[60,64,67,72]], bass:[29,36,34,36], arp:[0,1,2,3,2,3,1,2], wave:'triangle', lv:.045, hat:2, kick:4, snr:true},
 ];
 BGM.songI = Math.floor(Math.random() * BGM_SONGS.length);
 BGM.loops = 0;
