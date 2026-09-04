@@ -2009,8 +2009,9 @@ function burst(parent, x, y, color, n=8){
 }
 function makeCanvas(stageEl, W, H){
   const cv = document.createElement('canvas');
-  const dpr = Math.min(2, window.devicePixelRatio||1);
-  cv.width = W*dpr; cv.height = H*dpr;
+  /* backing store matches the upscaled display size (1.32x) times screen density — true HD, no blur */
+  const dpr = Math.min(3, (window.devicePixelRatio||1) * 1.32);
+  cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr);
   cv.style.width = '100%'; cv.style.maxWidth = Math.round(W*1.32)+'px';
   cv.style.maxHeight = 'calc(100vh - 215px)'; cv.style.aspectRatio = W+'/'+H;
   cv.className = 'gcv';
