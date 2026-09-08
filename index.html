@@ -1686,16 +1686,22 @@ function rosterEmail(name){ const r = rosterGet(name); return (r && r.email) || 
 function hydrateRow(o){ if(o && o.name && !o.avatar){ const a = rosterAvatar(o.name, null); if(a) o.avatar = a; } return o; }
 function slimRow(o){ const c = Object.assign({}, o); delete c.avatar; delete c.email; return c; }
 function cloudPushMe(){
-  if(!CLOUD.on) return;
+  if(!CLOUD.on) return Promise.resolve();
   const me = (typeof player !== 'undefined' && player) ? player : (state.profile || null);
-  if(!me || !me.name) return;
+  if(!me || !me.name) return Promise.resolve();
   const em = (me.email || (typeof authUser === 'function' ? (authUser()||{}).email : null)) || null;
   const sig = me.name + '|' + (me.avatar||'') + '|' + (em||'');
-  if(CLOUD._meSig === sig) return;
+  if(CLOUD._meSig === sig) return CLOUD._meP || Promise.resolve();
   CLOUD._meSig = sig;
-  cloudUpsert('players', [{ name: me.name, data: { avatar: me.avatar, email: em, ts: Date.now() } }], 'name');
+  CLOUD._meP = cloudUpsert('players', [{ name: me.name, data: { avatar: me.avatar, email: em, ts: Date.now() } }], 'name')
+    .catch(()=>{});
+  return CLOUD._meP;
 }
-function cloudPushResult(t, rec){ if(t && rec){ cloudPushMe(); cloudUpsert('results', [{tid:t.id, date:rec.date, name:rec.name, data:slimRow(rec)}], 'tid,date,name'); } }
+function cloudPushResult(t, rec){
+  /* el alta en el roster va PRIMERO: el servidor valida contra ella que este resultado es tuyo */
+  if(t && rec) Promise.resolve(cloudPushMe()).then(()=>
+    cloudUpsert('results', [{tid:t.id, date:rec.date, name:rec.name, data:slimRow(rec)}], 'tid,date,name'));
+}
 function cloudPushChat(t, m){ if(t && m){ cloudPushMe(); cloudUpsert('chat', [{id:m.id, tid:t.id, data:slimRow(m), ts:m.ts}], 'id'); } }
 function cloudPushTrivia(t, e){
   if(!CLOUD.on || !t || !e) return;
