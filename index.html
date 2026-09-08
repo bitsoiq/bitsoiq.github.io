@@ -7508,7 +7508,8 @@ const AUTH_LS = 'bitsoiq_auth';
 function authUser(){
   try{
     const u = JSON.parse(localStorage.getItem(AUTH_LS)||'null');
-    if(u && u.ts && Date.now() - u.ts > 30*86400e3) return null;   /* re-verify monthly */
+    if(u && u.ts && Date.now() - u.ts > 30*86400e3) return null;   /* re-verifica cada mes */
+    if(u && !u.tok) return null;   /* sesión vieja sin token: hay que volver a entrar para que la nube te reconozca */
     return u;
   }catch(e){ return null; }
 }

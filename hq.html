@@ -1515,7 +1515,13 @@ const CLOUD = { on: /^https:/.test(CLOUD_URL) && CLOUD_KEY.length > 20, admin:tr
    Sin esto, Supabase no puede distinguir al admin de cualquier visitante.
    ============================================================ */
 const AUTH_LS = 'bitsoiq_auth';
-function authUser(){ try{ return JSON.parse(localStorage.getItem(AUTH_LS)||'null'); }catch(e){ return null; } }
+function authUser(){
+  try{
+    const u = JSON.parse(localStorage.getItem(AUTH_LS)||'null');
+    if(u && !u.tok) return null;   /* sesión vieja sin token: no sirve para identificarte ante la nube */
+    return u;
+  }catch(e){ return null; }
+}
 function authStart(){
   location.href = CLOUD_URL + '/auth/v1/authorize?provider=google&redirect_to=' + encodeURIComponent(location.origin + location.pathname);
 }
@@ -1628,14 +1634,32 @@ function rosterEmail(name){
   const r = rosterGet(name);
   return (r && r.email) || null;      /* compatibilidad con datos viejos */
 }
+let emailsStatus = '';
 function pullEmails(){
-  /* tabla privada: si no eres admin, Supabase simplemente no devuelve nada */
-  if(!CLOUD.on) return Promise.resolve();
-  return cfetch('player_emails?select=name,email').then(r=> r.ok ? r.json() : []).then(rows=>{
-    if(!Array.isArray(rows) || !rows.length) return;
+  /* tabla privada: si no eres admin (o falta correr el SQL), no devuelve nada */
+  if(!CLOUD.on){ emailsStatus = 'sin conexión'; return Promise.resolve(); }
+  if(!authToken()){ emailsStatus = 'nologin'; return Promise.resolve(); }
+  return cfetch('player_emails?select=name,email').then(r=>{
+    if(r.status === 404 || r.status === 400){ emailsStatus = 'nosql'; return []; }
+    if(!r.ok){ emailsStatus = 'denied'; return []; }
+    emailsStatus = 'ok';
+    return r.json();
+  }).then(rows=>{
+    if(!Array.isArray(rows)) return;
     state.emails = state.emails || {};
     rows.forEach(r=>{ if(r && r.name && r.email) state.emails[r.name] = r.email; });
-  }).catch(()=>{});
+    if(emailsStatus === 'ok' && !rows.length) emailsStatus = 'empty';
+  }).catch(()=>{ emailsStatus = 'error'; });
+}
+function emailsHint(){
+  const M = {
+    nologin: '🔑 Sign out and sign in again with Google — your saved session is from an older version and the cloud can’t identify you.',
+    nosql:   '⚙️ Run the Supabase SQL file — the player_emails table doesn’t exist yet.',
+    denied:  '🔒 Your account isn’t in the admins table. Add it in Supabase → Table Editor → admins.',
+    empty:   '⏳ No emails on file yet — they get registered the next time each person opens the game.',
+    error:   '⚠️ Couldn’t reach the cloud.'
+  };
+  return M[emailsStatus] || '';
 }
 function myAvatar(){
   const me = (typeof player !== 'undefined' && player) ? player : (state.profile || null);
@@ -6906,6 +6930,7 @@ function histInsightsPaint(hid){
       <h3>🧠 Every message, worst learned first <span class="pill dim">red = needs reinforcement</span></h3>
       <div class="hscroll">${qrows.map(qbar).join('')}</div>
       <h3>👥 Every player — accuracy, volume & contact <span class="pill dim">emails admin-only</span></h3>
+      ${emailsHint() ? `<div class="empty" style="padding:12px; margin-bottom:8px; text-align:left; font-size:12.5px">${emailsHint()}</div>` : ''}
       <div class="hscroll">
       ${prows.map((p,i)=> `<div class="hrow"><span class="hrk">${i+1}</span>
         <span class="hnm" style="white-space:normal">${esc(p.name)}${p.email ? `<div class="hml">${esc(p.email)}</div>` : ''}</span>
