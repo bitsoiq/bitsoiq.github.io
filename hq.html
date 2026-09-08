@@ -1610,6 +1610,16 @@ function cloudSchedulePush(){
    no duplicados en cada resultado y cada mensaje. Corta el tráfico ~40x
    y saca los correos de las tablas que cualquiera puede leer.
    ============================================================ */
+function avOf(o){
+  if(!o) return null;
+  if(typeof o === 'string') return o;
+  if(o.avatar) return o.avatar;
+  const r = (state.roster || {})[o.name];
+  if(r && r.avatar) return r.avatar;
+  const me = (typeof player !== 'undefined' && player) ? player : (state.profile || null);
+  if(me && o.name === me.name && me.avatar) return me.avatar;
+  return null;
+}
 function rosterGet(name){ return (state.roster || {})[name] || null; }
 function rosterAvatar(name, fallback){ const r = rosterGet(name); return (r && r.avatar) || fallback || '🦊'; }
 function rosterEmail(name){ const r = rosterGet(name); return (r && r.email) || null; }
@@ -6678,6 +6688,7 @@ function standings(t){
     if(!d.gameId) return;
     dayRows(t, d.date).forEach(r=>{
       map[r.name] = map[r.name] || {name:r.name, avatar:r.avatar, pts:0, days:0};
+      if(!map[r.name].avatar && r.avatar) map[r.name].avatar = r.avatar;
       map[r.name].pts += r.pts; map[r.name].days++;
     });
   });
@@ -6696,7 +6707,7 @@ function todayCardHTML(t){
     ${rows.length ? rows.map(r=>`
       <div class="lb-row ${r.name===me?'me':''}">
         <div class="rk">${r.rank}</div>
-        <span class="av ${r.rank===1?'crowned':''}">${avatarHTML(r.avatar)}</span>
+        <span class="av ${r.rank===1?'crowned':''}">${avatarHTML(avOf(r))}</span>
         <div><div>${esc(r.name)}</div><div class="sub">${g.fmt(r.value)}</div></div>
         <div class="pts">+${r.pts} pts</div>
       </div>`).join('')
@@ -6713,13 +6724,13 @@ function leaderboardCardHTML(t){
     const slots = [[1,'p2','🥈'],[0,'p1','🥇'],[2,'p3','🥉']];
     html += `<div class="podium">${slots.map(([i,cls,med])=>{
       const s = st[i]; if(!s) return '';
-      return `<div class="pcol ${cls}"><div class="pav ${cls==='p1'?'crowned':''}">${avatarHTML(s.avatar)}</div><div class="pn">${esc(s.name)}</div><div class="pp">${s.pts} pts · ${s.days} day${s.days===1?'':'s'}</div><div class="pbar">${med}</div></div>`;
+      return `<div class="pcol ${cls}"><div class="pav ${cls==='p1'?'crowned':''}">${avatarHTML(avOf(s))}</div><div class="pn">${esc(s.name)}</div><div class="pp">${s.pts} pts · ${s.days} day${s.days===1?'':'s'}</div><div class="pbar">${med}</div></div>`;
     }).join('')}</div>`;
     /* podium already covers the top 3 — the list picks up from 4th, no repeats */
     html += st.slice(3).map((s,i)=>`
       <div class="lb-row ${s.name===me?'me':''}">
         <div class="rk">${i+4}</div>
-        <span class="av">${avatarHTML(s.avatar)}</span>
+        <span class="av">${avatarHTML(avOf(s))}</span>
         <div><div>${esc(s.name)}</div><div class="sub">${s.days} day${s.days===1?'':'s'} played</div></div>
         <div class="pts">${s.pts} pts</div>
       </div>`).join('');
@@ -7009,11 +7020,11 @@ function feedMsgsHTML(t){
       return `<div class="sysmsg">${esc(m.text||'')}<span class="ftime">${fmtTime(m.ts)}</span></div>`;
     }
     if(m.score !== undefined && m.score !== null){
-      return `<div class="scorepill"><span class="fav">${avatarHTML(m.avatar)}</span><span><b>${esc(m.name)}</b> ${esc(m.text||('scored '+m.score))}</span><span class="ftime">${fmtTime(m.ts)}</span></div>`;
+      return `<div class="scorepill"><span class="fav">${avatarHTML(avOf(m))}</span><span><b>${esc(m.name)}</b> ${esc(m.text||('scored '+m.score))}</span><span class="ftime">${fmtTime(m.ts)}</span></div>`;
     }
     const g = (m.gif!==undefined && m.gif!==null) ? GIF_SET[m.gif] : null;
     return `<div class="fmsg">
-      <span class="fav">${avatarHTML(m.avatar)}</span>
+      <span class="fav">${avatarHTML(avOf(m))}</span>
       <div><div class="fh">${esc(m.name)}<span class="ftime">${fmtTime(m.ts)}</span></div>
       ${g ? `<span class="fgif ${g.a}" title="${esc(g.l)}">${g.e}</span>` : `<div class="ftext">${esc(m.text||'')}</div>`}</div>
     </div>`;
@@ -7067,7 +7078,7 @@ function standingsTabHTML(t){
     const slots = [[1,'p2','🥈'],[0,'p1','🥇'],[2,'p3','🥉']];
     html += `<div class="podium">${slots.map(([i,cls,med])=>{
       const s = st[i]; if(!s) return '';
-      return `<div class="pcol ${cls}"><div class="pav ${cls==='p1'?'crowned':''}">${avatarHTML(s.avatar)}</div><div class="pn">${esc(s.name)}</div><div class="pp">${s.pts} pts · ${s.days} day${s.days===1?'':'s'}</div><div class="pbar">${med}</div></div>`;
+      return `<div class="pcol ${cls}"><div class="pav ${cls==='p1'?'crowned':''}">${avatarHTML(avOf(s))}</div><div class="pn">${esc(s.name)}</div><div class="pp">${s.pts} pts · ${s.days} day${s.days===1?'':'s'}</div><div class="pbar">${med}</div></div>`;
     }).join('')}</div>`;
     const max = st[0].pts || 1;
     let rank = 0;
@@ -7077,7 +7088,7 @@ function standingsTabHTML(t){
       return `<div class="strow ${s.name===me?'me':''} ${rank<=3?'top'+rank:''}">
         <div class="fill" style="width:0" data-w="${Math.round(s.pts/max*100)}"></div>
         <div class="rk">${medal||rank}</div>
-        <span class="av ${rank===1?'crowned':''}">${avatarHTML(s.avatar)}</span>
+        <span class="av ${rank===1?'crowned':''}">${avatarHTML(avOf(s))}</span>
         <div><div>${esc(s.name)}${s.name===me?' <span class="pill neon" style="font-size:9px; padding:2px 7px">YOU</span>':''}${iqBadge(t, s.name)}</div><div class="sub">${s.days} day${s.days===1?'':'s'} played</div></div>
         <div class="pts">${s.pts} pts</div>
       </div>`;
@@ -7589,7 +7600,7 @@ function renderHistory(){
       ${st.length ? st.slice(0,3).map((s,i)=>`
         <div class="lb-row">
           <div class="rk">${i===0?'🥇':i===1?'🥈':'🥉'}</div>
-          <span class="av">${avatarHTML(s.avatar)}</span>
+          <span class="av">${avatarHTML(avOf(s))}</span>
           <div><div>${esc(s.name)}</div><div class="sub">${s.days} day${s.days===1?'':'s'} played</div></div>
           <div class="pts">${s.pts} pts</div>
         </div>`).join('') + (st.length > 3 ? `<div style="font-size:12px; font-weight:800; color:var(--ink3); margin-top:8px">+ ${st.length-3} more players — full board & metrics in 📊 Insights</div>` : '')
@@ -7601,7 +7612,7 @@ function renderHistory(){
           ${d.rows.length ? d.rows.map(r=>`
             <div class="lb-row">
               <div class="rk">${r.rank}</div>
-              <span class="av">${avatarHTML(r.avatar)}</span>
+              <span class="av">${avatarHTML(avOf(r))}</span>
               <div><div>${esc(r.name)}</div><div class="sub">${esc(r.disp)}</div></div>
               <div class="pts">+${r.pts} pts</div>
             </div>`).join('')

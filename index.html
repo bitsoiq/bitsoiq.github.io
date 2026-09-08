@@ -1681,6 +1681,18 @@ function cloudSchedulePush(){
    no duplicados en cada resultado y cada mensaje. Corta el tráfico ~40x
    y saca los correos de las tablas que cualquiera puede leer.
    ============================================================ */
+function avOf(o){
+  /* resuelve la foto en el momento de pintar: la fila → el roster → si soy yo, la mía → avatar por defecto.
+     Así aunque una fila se haya guardado sin foto, en pantalla siempre se ve la correcta. */
+  if(!o) return null;
+  if(typeof o === 'string') return o;
+  if(o.avatar) return o.avatar;
+  const r = (state.roster || {})[o.name];
+  if(r && r.avatar) return r.avatar;
+  const me = (typeof player !== 'undefined' && player) ? player : (state.profile || null);
+  if(me && o.name === me.name && me.avatar) return me.avatar;
+  return null;
+}
 function rosterGet(name){ return (state.roster || {})[name] || null; }
 function rosterAvatar(name, fallback){ const r = rosterGet(name); return (r && r.avatar) || fallback || '🦊'; }
 function rosterEmail(name){ const r = rosterGet(name); return (r && r.email) || null; }
@@ -6451,6 +6463,7 @@ function standings(t){
     if(!d.gameId) return;
     dayRows(t, d.date).forEach(r=>{
       map[r.name] = map[r.name] || {name:r.name, avatar:r.avatar, pts:0, days:0};
+      if(!map[r.name].avatar && r.avatar) map[r.name].avatar = r.avatar;
       map[r.name].pts += r.pts; map[r.name].days++;
     });
   });
@@ -6938,7 +6951,7 @@ function renderTodayCard(t){
       <h2 style="margin-top:6px">Tournament finished</h2>
       ${st.length ? `<div class="podium fin-podium">${slots.map(([i,cls,med])=>{
         const p = st[i]; if(!p) return '';
-        return `<div class="pcol ${cls}"><div class="pav ${cls==='p1'?'crowned':''}">${avatarHTML(p.avatar)}</div><div class="pn">${esc(p.name)}</div><div class="pp">${p.pts} pts</div><div class="pbar">${med}</div></div>`;
+        return `<div class="pcol ${cls}"><div class="pav ${cls==='p1'?'crowned':''}">${avatarHTML(avOf(p))}</div><div class="pn">${esc(p.name)}</div><div class="pp">${p.pts} pts</div><div class="pbar">${med}</div></div>`;
       }).join('')}</div>` : ''}
       ${myLine}
       <p class="sub" style="margin-top:14px">Full final board lives in the <b>Points</b> tab. See you next tournament 🐂</p></div>`;
@@ -7014,7 +7027,7 @@ function renderTodayCard(t){
         </div>`)(daily(t))}
         ${rows.length ? `<div class="todaychips">${rows.map(r=>`
           <span class="pchip ${r.rank===1?'first':''} ${r.name===player.name?'me':''}" title="${esc(g.fmt(r.value))}">
-            <span class="fav ${r.rank===1?'crowned':''}">${avatarHTML(r.avatar)}</span>${esc(r.name)}<span class="pv">· ${g.fmt(r.value)}</span>
+            <span class="fav ${r.rank===1?'crowned':''}">${avatarHTML(avOf(r))}</span>${esc(r.name)}<span class="pv">· ${g.fmt(r.value)}</span>
           </span>`).join('')}</div>` : ''}
         ${best ? `<div class="laurel"><span class="lv">🥇</span>
           <div style="text-align:center"><div class="ls">BEST PLAYER TODAY</div><div class="ln">${esc(best.name)} 👑</div><div class="ls">${g.fmt(best.value)}</div></div>
@@ -7142,11 +7155,11 @@ function feedHTML(t){
       return `<div class="sysmsg">${esc(m.text||'')}<span class="ftime">${fmtTime(m.ts)}</span></div>`;
     }
     if(m.score !== undefined && m.score !== null){
-      return `<div class="scorepill"><span class="fav">${avatarHTML(m.avatar)}</span><span><b>${esc(m.name)}</b> ${esc(m.text||('scored '+m.score))}</span><span class="ftime">${fmtTime(m.ts)}</span></div>`;
+      return `<div class="scorepill"><span class="fav">${avatarHTML(avOf(m))}</span><span><b>${esc(m.name)}</b> ${esc(m.text||('scored '+m.score))}</span><span class="ftime">${fmtTime(m.ts)}</span></div>`;
     }
     const g = (m.gif!==undefined && m.gif!==null) ? GIF_SET[m.gif] : null;
     return `<div class="fmsg">
-      <span class="fav">${avatarHTML(m.avatar)}</span>
+      <span class="fav">${avatarHTML(avOf(m))}</span>
       <div><div class="fh">${esc(m.name)}${m.name===player.name?' <span style="color:var(--ink3)">(you)</span>':''}<span class="ftime">${fmtTime(m.ts)}</span></div>
       ${g ? `<span class="fgif ${g.a}" title="${esc(g.l)}">${g.e}</span>` : `<div class="ftext">${esc(m.text||'')}</div>`}</div>
     </div>`;
@@ -7193,7 +7206,7 @@ function pointsTodayHTML(t){
   html += rows.length ? rows.map(r=>`
     <div class="lb-row ${r.name===player.name?'me':''}">
       <div class="rk">${r.rank}</div>
-      <span class="av ${r.rank===1?'crowned':''}">${avatarHTML(r.avatar)}</span>
+      <span class="av ${r.rank===1?'crowned':''}">${avatarHTML(avOf(r))}</span>
       <div><div>${esc(r.name)}${r.name===player.name?' (you)':''}${iqBadge(t, r.name)}</div><div class="sub">${g.fmt(r.value)}${r.tags && r.tags.length ? ' · ' + r.tags.join(' · ') : ''}</div></div>
       <div class="pts">+${r.pts} pts</div>
     </div>`).join('')
@@ -7236,7 +7249,7 @@ function pointsDaysHTML(t){
       ${open ? (rows.length ? rows.map(r=> `
         <div class="lb-row ${r.name===player.name?'me':''}" style="margin:8px 0 0">
           <div class="rk">${r.rank}</div>
-          <span class="av">${avatarHTML(r.avatar)}</span>
+          <span class="av">${avatarHTML(avOf(r))}</span>
           <div><div><b>${esc(r.name)}${r.name===player.name?' (you)':''}</b></div><div class="sub">${r.g ? r.g.fmt(r.value) : r.value}${r.tags && r.tags.length ? ' · ' + r.tags.join(' ') : ''}</div></div>
           <div class="pts">${r.pts} pts</div>
         </div>`).join('') : '<div class="empty" style="padding:14px">Nobody played this day.</div>') : ''}
@@ -7253,7 +7266,7 @@ function pointsOverallHTML(t){
   const slots = [[1,'p2','🥈'],[0,'p1','🥇'],[2,'p3','🥉']];
   html += `<div class="podium">${slots.map(([i,cls,med])=>{
     const s = st[i]; if(!s) return '';
-    return `<div class="pcol ${cls}"><div class="pav ${cls==='p1'?'crowned':''}">${avatarHTML(s.avatar)}</div><div class="pn">${esc(s.name)}</div><div class="pp">${s.pts} pts · ${s.days} day${s.days===1?'':'s'}</div><div class="pbar">${med}</div></div>`;
+    return `<div class="pcol ${cls}"><div class="pav ${cls==='p1'?'crowned':''}">${avatarHTML(avOf(s))}</div><div class="pn">${esc(s.name)}</div><div class="pp">${s.pts} pts · ${s.days} day${s.days===1?'':'s'}</div><div class="pbar">${med}</div></div>`;
   }).join('')}</div>`;
   let rank = 0;
   const MAXROWS = 60;                              /* con cientos de jugadores no pintamos todo de golpe */
@@ -7266,7 +7279,7 @@ function pointsOverallHTML(t){
     if(!showAll && i >= MAXROWS) rank = myIdx + 1;
     return `<div class="lb-row ${s.name===player.name?'me':''}">
       <div class="rk">${rank}</div>
-      <span class="av ${rank===1?'crowned':''}">${avatarHTML(s.avatar)}</span>
+      <span class="av ${rank===1?'crowned':''}">${avatarHTML(avOf(s))}</span>
       <div><div>${esc(s.name)}${s.name===player.name?' (you)':''}${iqBadge(t, s.name)}</div><div class="sub">${s.days} day${s.days===1?'':'s'} played</div></div>
       <div class="pts">${s.pts} pts</div>
     </div>`;
@@ -7588,6 +7601,7 @@ async function authInit(){
     authGateShow();
   }
 }
+try{ rehydrateAll(); }catch(e){}
 authInit();
 
 
