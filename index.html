@@ -659,6 +659,13 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 .dwin .wnm{font-weight:900; font-size:13.5px; margin-top:2px}
 .dwin .wsc{font-size:12px; font-weight:800; color:var(--ink3)}
 .dwin .chev{font-size:10px; color:var(--ink3); font-weight:900}
+.tb-dice{display:flex; gap:10px; justify-content:center; font-size:64px; line-height:1; margin:14px 0 6px; color:var(--ink)}
+.tb-opts{display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:12px}
+.tb-b{padding:18px 0; font-size:24px; font-weight:900; border-radius:14px; background:var(--card2); border:2px solid var(--line); color:var(--ink); cursor:pointer}
+.tb-b:hover{border-color:var(--neon)}
+.tb-b.ok{background:var(--neon); color:#1A1713; border-color:var(--neon)}
+.tb-b.bad{background:#FF4D5A; color:#fff; border-color:#FF4D5A}
+.tb-note{margin-top:14px; font-weight:800; font-size:13px; color:var(--ink3)}
 .cucard{background:linear-gradient(135deg, #3A2B12, #2C2418); border:1.5px solid #C98A2B; border-radius:20px; padding:18px 20px; margin-bottom:16px; box-shadow:0 4px 0 #1F1809; animation:cupop .4s cubic-bezier(.2,1.4,.4,1)}
 @keyframes cupop{from{transform:scale(.96); opacity:0}to{transform:scale(1); opacity:1}}
 .cucard .cu-head{display:flex; gap:12px; align-items:flex-start}
@@ -1121,11 +1128,23 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 const ACCESS_CODE = 'DISABLED-BY-CONSOLE-GATE';   // case-sensitive, exactly as written
 const VENUES      = ['Company Meeting','Business Huddle','Retail Huddle'];
 /* game-day clock: each tournament day runs 24h from its start hour (default 9:00) */
-const DAY_START = 9;
+const DAY_START = 6;                       /* 6:00 AM hora de Ciudad de México, igual para todos */
+const TOUR_TZ = 'America/Mexico_City';
 function tourStartHour(t){ return (t && t.startHour!=null && t.startHour!=='') ? +t.startHour : DAY_START; }
+function tzParts(ms){
+  /* el día del torneo se define SIEMPRE en hora de México, sin importar dónde esté el jugador */
+  try{
+    const p = new Intl.DateTimeFormat('en-CA', { timeZone:TOUR_TZ, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false }).formatToParts(new Date(ms));
+    const g = k => p.find(x=> x.type===k).value;
+    return { y:g('year'), mo:g('month'), d:g('day'), h:+g('hour')%24, mi:+g('minute'), s:+g('second') };
+  }catch(e){
+    const d = new Date(ms);
+    return { y:String(d.getFullYear()), mo:String(d.getMonth()+1).padStart(2,'0'), d:String(d.getDate()).padStart(2,'0'), h:d.getHours(), mi:d.getMinutes(), s:d.getSeconds() };
+  }
+}
 function tKey(t){
-  const d = new Date(Date.now() - tourStartHour(t)*3600e3);
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const p = tzParts(Date.now() - tourStartHour(t)*3600e3);
+  return p.y + '-' + p.mo + '-' + p.d;
 }
 function fmtHour(h){ h=+h; const ap = h<12 ? 'AM' : 'PM'; const v = h%12===0 ? 12 : h%12; return v+':00 '+ap; }
 /* 20 hand-drawn avatars in the arcade look — ids map into AVA below */
@@ -1591,10 +1610,35 @@ function migrateState(s){
 const CLOUD_URL = 'https://hvxvgdylfzgxvdyapwns.supabase.co';
 const CLOUD_KEY = 'sb_publishable_c8RePdCohVa_2ZZaNMcMcQ_SEltDHNM';
 const CLOUD = { on: /^https:/.test(CLOUD_URL) && CLOUD_KEY.length > 20, admin:false, busy:false, pushT:null, pending:false, lastPush:'' };
+function authToken(){
+  try{
+    const u = JSON.parse(localStorage.getItem('bitsoiq_auth')||'null');
+    if(u && u.tok && (!u.exp || Date.now() < u.exp - 60000)) return u.tok;
+    if(u && u.rt) authRefresh(u);
+  }catch(e){}
+  return null;
+}
+let _refreshing = false;
+function authRefresh(u){
+  if(_refreshing) return; _refreshing = true;
+  fetch(CLOUD_URL + '/auth/v1/token?grant_type=refresh_token', {
+    method:'POST', headers:{ apikey:CLOUD_KEY, 'Content-Type':'application/json' },
+    body: JSON.stringify({ refresh_token: u.rt })
+  }).then(r=> r.ok ? r.json() : null).then(d=>{
+    _refreshing = false;
+    if(d && d.access_token){
+      u.tok = d.access_token; u.rt = d.refresh_token || u.rt;
+      u.exp = Date.now() + ((d.expires_in||3600)*1000);
+      localStorage.setItem('bitsoiq_auth', JSON.stringify(u));
+    }
+  }).catch(()=>{ _refreshing = false; });
+}
 function cfetch(path, opt){
   opt = opt || {};
   const h = { 'apikey': CLOUD_KEY, 'Content-Type': 'application/json' };
-  if(/^eyJ/.test(CLOUD_KEY)) h['Authorization'] = 'Bearer '+CLOUD_KEY;
+  const _ut = authToken();
+  if(_ut) h['Authorization'] = 'Bearer ' + _ut;            /* identidad real del jugador */
+  else if(/^eyJ/.test(CLOUD_KEY)) h['Authorization'] = 'Bearer '+CLOUD_KEY;
   opt.headers = Object.assign(h, opt.headers||{});
   return fetch(CLOUD_URL + '/rest/v1/' + path, opt);
 }
@@ -1631,12 +1675,32 @@ function cloudSchedulePush(){
   clearTimeout(CLOUD.pushT);
   CLOUD.pushT = setTimeout(cloudPushDocs, 1200);
 }
-function cloudPushResult(t, rec){ if(t && rec) cloudUpsert('results', [{tid:t.id, date:rec.date, name:rec.name, data:rec}], 'tid,date,name'); }
-function cloudPushChat(t, m){ if(t && m) cloudUpsert('chat', [{id:m.id, tid:t.id, data:m, ts:m.ts}], 'id'); }
+/* ============================================================
+   ROSTER — avatar y email viven UNA sola vez por jugador (tabla players),
+   no duplicados en cada resultado y cada mensaje. Corta el tráfico ~40x
+   y saca los correos de las tablas que cualquiera puede leer.
+   ============================================================ */
+function rosterGet(name){ return (state.roster || {})[name] || null; }
+function rosterAvatar(name, fallback){ const r = rosterGet(name); return (r && r.avatar) || fallback || '🦊'; }
+function rosterEmail(name){ const r = rosterGet(name); return (r && r.email) || null; }
+function hydrateRow(o){ if(o && o.name && !o.avatar){ const a = rosterAvatar(o.name, null); if(a) o.avatar = a; } return o; }
+function slimRow(o){ const c = Object.assign({}, o); delete c.avatar; delete c.email; return c; }
+function cloudPushMe(){
+  if(!CLOUD.on) return;
+  const me = (typeof player !== 'undefined' && player) ? player : (state.profile || null);
+  if(!me || !me.name) return;
+  const em = (me.email || (typeof authUser === 'function' ? (authUser()||{}).email : null)) || null;
+  const sig = me.name + '|' + (me.avatar||'') + '|' + (em||'');
+  if(CLOUD._meSig === sig) return;
+  CLOUD._meSig = sig;
+  cloudUpsert('players', [{ name: me.name, data: { avatar: me.avatar, email: em, ts: Date.now() } }], 'name');
+}
+function cloudPushResult(t, rec){ if(t && rec){ cloudPushMe(); cloudUpsert('results', [{tid:t.id, date:rec.date, name:rec.name, data:slimRow(rec)}], 'tid,date,name'); } }
+function cloudPushChat(t, m){ if(t && m){ cloudPushMe(); cloudUpsert('chat', [{id:m.id, tid:t.id, data:slimRow(m), ts:m.ts}], 'id'); } }
 function cloudPushTrivia(t, e){
   if(!CLOUD.on || !t || !e) return;
   cfetch('trivia_log', { method:'POST', headers:{'Prefer':'return=minimal'},
-    body: JSON.stringify([{tid:t.id, date:e.date, name:e.name, qid:String(e.qid), q:e.q, ok:!!e.ok, ts:e.ts}]) }).catch(()=>{});
+    body: JSON.stringify([{tid:t.id, date:e.date, name:e.name, qid:String(e.qid), q:e.q, ok:!!e.ok, ts:e.ts}]) }).catch(()=>{});   /* sin email: se resuelve por nombre contra el roster */
 }
 function cloudDeleteTournament(tid){
   if(!CLOUD.on) return;
@@ -1676,7 +1740,7 @@ async function cloudPull(){
   try{
     const get = p => cfetch(p).then(r=> r.ok ? r.json() : []).catch(()=>[]);
     CLOUD.m = CLOUD.m || { stamp:'', chatTs:0, trivId:0, slowAt:0 };
-    const slow = Date.now() - CLOUD.m.slowAt > 45000;   /* heavy tables every ~45s; light ones every tick */
+    const slow = Date.now() - CLOUD.m.slowAt > 600000;  /* red de seguridad: barrido completo cada 10 min */
 
     /* --- tournaments: fetch full docs only when something actually changed --- */
     const meta = await get('tournaments?select=tid,updated_at');
@@ -1701,6 +1765,21 @@ async function cloudPull(){
     const tmap = {};
     (state.tournaments||[]).forEach(t=>{ tmap[t.id] = t; });
 
+    /* --- roster: SOLO los jugadores nuevos o que cambiaron su foto.
+       Con 400 personas, volver a bajar el roster completo cada alta serían megas de más. --- */
+    const pq = CLOUD.m.plAt
+      ? 'players?select=*&updated_at=gt.' + encodeURIComponent(CLOUD.m.plAt) + '&order=updated_at.asc&limit=500'
+      : 'players?select=*&order=updated_at.asc&limit=1000';
+    const ppl = await get(pq);
+    if(Array.isArray(ppl) && ppl.length){
+      const ros = {};
+      ppl.forEach(r=>{
+        if(r && r.name && r.data) ros[r.name] = r.data;
+        if(r && r.updated_at && (!CLOUD.m.plAt || r.updated_at > CLOUD.m.plAt)) CLOUD.m.plAt = r.updated_at;
+      });
+      if(Object.keys(ros).length){ state.roster = Object.assign(state.roster||{}, ros); changed = true; }
+    }
+
     /* --- chat: incremental by timestamp --- */
     const chat = await get('chat?select=*&ts=gt.' + (CLOUD.m.chatTs||0) + '&order=ts.asc&limit=500');
     chat.forEach(c=>{
@@ -1709,7 +1788,7 @@ async function cloudPull(){
       const t = tmap[c.tid]; if(!t) return;
       t.chat = t.chat || [];
       if(!t.chat.some(m=> m.id===c.data.id)){
-        t.chat.push(c.data);
+        t.chat.push(hydrateRow(c.data));
         t.chat.sort((a,b)=> (a.ts||0)-(b.ts||0));
         if(t.chat.length > 300) t.chat = t.chat.slice(-300);
         changed = true;
@@ -1730,8 +1809,19 @@ async function cloudPull(){
       const d = new Date(Date.now() - k*86400e3);
       dkeys.push(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'));
     }
-    const rq = slow ? 'results?select=*' : 'results?select=*&date=in.(' + dkeys.join(',') + ')';
-    const results = await get(rq);
+    /* SOLO LO NUEVO: pedimos las filas modificadas desde la última vez.
+       Cada resultado viaja UNA vez en lugar de re-descargar el board entero cada tick. */
+    let rq;
+    if(CLOUD.m.resAt && !slow) rq = 'results?select=*&updated_at=gt.' + encodeURIComponent(CLOUD.m.resAt) + '&order=updated_at.asc&limit=2000';
+    else rq = slow ? 'results?select=*' : 'results?select=*&date=in.(' + dkeys.join(',') + ')';
+    let results = await get(rq);
+    if(!Array.isArray(results)) results = [];
+    if(results.length && results[0].updated_at === undefined && CLOUD.m.resAt){
+      CLOUD.m.resAt = null;                                  /* la columna aún no existe: volvemos al modo anterior */
+    } else {
+      results.forEach(r=>{ if(r.updated_at && (!CLOUD.m.resAt || r.updated_at > CLOUD.m.resAt)) CLOUD.m.resAt = r.updated_at; });
+      if(!CLOUD.m.resAt && results.length && results[0].updated_at) CLOUD.m.resAt = results[results.length-1].updated_at;
+    }
     if(results.length || slow){
       const seen = {};
       results.forEach(r=>{
@@ -1741,7 +1831,7 @@ async function cloudPull(){
         const i = t.results.findIndex(x=> x.date===r.date && x.name===r.name);
         const cur = JSON.stringify(i>=0 ? t.results[i] : null);
         if(cur !== JSON.stringify(r.data)){
-          if(i>=0) t.results[i] = r.data; else t.results.push(r.data);
+          if(i>=0) t.results[i] = hydrateRow(r.data); else t.results.push(hydrateRow(r.data));
           changed = true;
         }
         (seen[r.tid] = seen[r.tid]||{})[r.date + '|' + r.name] = 1;
@@ -1788,7 +1878,29 @@ async function cloudPull(){
   CLOUD.busy = false;
   return changed;
 }
-function saveState(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} if(!saveState._quiet) cloudSchedulePush(); }
+function slimState(){
+  /* lo pesado (histórico de resultados, chat viejo, avatares repetidos) vive en la nube;
+     en el dispositivo solo guardamos lo reciente para no reventar el límite de 5 MB */
+  const c = Object.assign({}, state);
+  c.tournaments = (state.tournaments||[]).map(t=>{
+    const keep = (t.days||[]).filter(d=> d.gameId).map(d=> d.date).slice(-4);
+    const cut = keep.length ? keep[0] : '0000-00-00';
+    return Object.assign({}, t, {
+      results: (t.results||[]).filter(r=> r.date >= cut).map(slimRow),
+      chat: (t.chat||[]).slice(-80).map(slimRow),
+    });
+  });
+  c.triviaLog = (state.triviaLog||[]).slice(-1200);
+  return c;
+}
+function saveState(){
+  try{ localStorage.setItem(LS_KEY, JSON.stringify(slimState())); }
+  catch(e){
+    try{ localStorage.setItem(LS_KEY, JSON.stringify(Object.assign({}, slimState(), {triviaLog:[]}))); }
+    catch(e2){ if(!saveState._warned){ saveState._warned = true; try{ toast('Storage full — your progress lives in the cloud ☁️'); }catch(_){} } }
+  }
+  if(!saveState._quiet) cloudSchedulePush();
+}
 
 /* ============================================================
    HELPERS
@@ -2371,7 +2483,7 @@ const GAMES = [
 },
 
 /* ---- 4. DICE ROLL — add the dice, beat the clock ---- */
-{ id:'dice', name:'Dice Roll', tag:'Add the dice. Wrong = frozen.', dur:35,
+{ id:'dice', name:'Dice Roll', tag:'Add the dice. Wrong = frozen.', dur:35, tie:true,
   unit:'sums', lowerBetter:false, fmt:v=>v+' solved',
   grad:'linear-gradient(160deg,#12A278,#0A5C48)',
   how:'2 to 4 dice appear — add them up and tap the right total, fast. A wrong answer freezes you for 2 seconds. Most correct sums in 20 seconds wins.',
@@ -2433,7 +2545,7 @@ const GAMES = [
 },
 
 /* ---- 5. MEMORY MATCH — real crypto logos ---- */
-{ id:'memory', name:'Memory Match', tag:'Match the 8 crypto logos, fast.', dur:0,
+{ id:'memory', name:'Memory Match', tag:'Match the 8 crypto logos, fast.', dur:0, tie:true,
   unit:'seconds', lowerBetter:true, fmt:v=>v+'s', hudFmt:v=>v+'s',
   grad:'linear-gradient(160deg,#39557A,#22304A)',
   how:'You get a 2-second sneak peek at the whole board — memorize what you can. Then the cards flip down and the clock starts: match the 8 crypto logos as fast as possible. Your score is the time it takes to clear the board — no time limit, just your speed.',
@@ -2492,10 +2604,10 @@ const GAMES = [
 },
 
 /* ---- 6. SIMON SIGNAL — 10 pads, fast playback ---- */
-{ id:'simon', name:'Simon Signal', tag:'10 colors. Watch, repeat, survive.', dur:0,
+{ id:'simon', name:'Simon Signal', tag:'10 colors, fast. Watch, repeat, survive.', dur:0, tie:true,
   unit:'levels', lowerBetter:false, fmt:v=>'Level '+v,
   grad:'linear-gradient(160deg,#3A3A6E,#23234A)',
-  how:'A glowing wheel of TEN colors. Watch the segments flash around the ring — it plays fast — then repeat the sequence by tapping them. Every round adds one more step. One wrong segment and the run ends.',
+  how:'A glowing wheel of TEN colors. The segments flash FAST around the ring — then repeat the sequence by tapping them. Every round adds a step and the flashes get quicker. One wrong segment and the run ends.',
   run(stage, api){
     const arena = document.createElement('div'); arena.className='arena';
     arena.style.background='radial-gradient(700px 500px at 50% 30%, #3A3A6E, #1C1C38 80%)';
@@ -2538,9 +2650,11 @@ const GAMES = [
     }
     function playback(){
       lock = true; $('#si-lvl').textContent = 'Watch…';
-      const step = Math.max(200, 380 - seq.length*14);
-      seq.forEach((v,i)=> timers.push(setTimeout(()=> lit(v, step*0.58), 450 + step*i)));
-      timers.push(setTimeout(()=>{ lock=false; pos=0; $('#si-lvl').textContent = `Your turn — ${seq.length} step${seq.length>1?'s':''}`; }, 450 + step*seq.length));
+      /* ritmo: arranca ágil y aprieta con los niveles, pero con piso de 150ms
+         para que siga siendo memorizable y no se vuelva un parpadeo ilegible */
+      const step = Math.max(150, 300 - seq.length*16);
+      seq.forEach((v,i)=> timers.push(setTimeout(()=> lit(v, step*0.62), 380 + step*i)));
+      timers.push(setTimeout(()=>{ lock=false; pos=0; $('#si-lvl').textContent = `Your turn — ${seq.length} step${seq.length>1?'s':''}`; }, 380 + step*seq.length));
     }
     function next(){ seq.push(randi(0,9)); playback(); }
     function input(i){
@@ -2555,7 +2669,7 @@ const GAMES = [
       pos++;
       if(pos === seq.length){
         level = seq.length; api.set(level); sGood(); lock = true;
-        timers.push(setTimeout(next, 600));
+        timers.push(setTimeout(next, 420));
       }
     }
     next();
@@ -2564,7 +2678,7 @@ const GAMES = [
 },
 
 /* ---- 7. HODL STACK — Playus Tower Stack isometric ---- */
-{ id:'stack', name:'HODL Stack', tag:'Stack it high. Trim or die.', dur:0,
+{ id:'stack', name:'HODL Stack', tag:'Stack it high. Trim or die.', dur:0, tie:true,
   unit:'floors', lowerBetter:false, fmt:v=>v+' floors',
   grad:'linear-gradient(160deg,#59B7E8,#2E7BC4)',
   how:'A block slides back and forth over the tower. Tap (or press Space) to drop it. Whatever hangs over the edge gets sliced off — miss completely and the run ends. How high can you HODL?',
@@ -2660,7 +2774,7 @@ const GAMES = [
 },
 
 /* ---- 8. WHACK-A-BEAR — bears good, bulls bad ---- */
-{ id:'whack', name:'Whack-a-Bear', tag:'Bonk bears. Spare the bulls.', dur:30,
+{ id:'whack', name:'Whack-a-Bear', tag:'Bonk bears. Spare the bulls.', dur:30, tie:true,
   unit:'bonks', lowerBetter:false, fmt:v=>fmtN(v)+' bonks',
   grad:'linear-gradient(160deg,#7ECB62,#3E8B32)',
   how:'Bears pop out of their burrows — bonk them for +1. But bulls hide among them: hit a bull and you LOSE 2 points. Look before you smash. 30 seconds.',
@@ -2967,7 +3081,7 @@ const GAMES = [
 },
 
 /* ---- 10. ZIG — turn or fall ---- */
-{ id:'zig', name:'Zig', tag:'One button. Ninety-degree nerves.', dur:0,
+{ id:'zig', name:'Zig', tag:'One button. Ninety-degree nerves.', dur:0, tie:true,
   unit:'turns', lowerBetter:false, fmt:v=>fmtN(v)+' turns',
   grad:'linear-gradient(160deg,#6C5CE7,#4A3B8F)',
   how:'Your ball rolls along a zigzag path in the sky. Click, tap or press Space to switch direction. Stay on the path — roll off the edge and it\'s a long way down. Score a point per corner, and grab the floating coins for +2. Watch out: the ball keeps speeding up, the path slowly narrows, and the world changes colors as you go.',
@@ -3477,7 +3591,7 @@ const GAMES = [
 },
 
 /* ---- 15. MULTICOLOR FILL — real Flow rules: fill EVERY cell ---- */
-{ id:'flow', name:'Multicolor Fill', tag:'Connect the dots. It only gets harder.', dur:45,
+{ id:'flow', name:'Multicolor Fill', tag:'Connect the dots. It only gets harder.', dur:45, tie:true,
   unit:'pairs', lowerBetter:false, fmt:v=>fmtN(v)+' pairs',
   grad:'linear-gradient(160deg,#26303A,#161D24)',
   how:'Drag to draw pipes between matching colored dots — pipes can\'t cross. A board is complete when every pair is connected AND every cell is covered. Clear a board for +5 and the next one gets HARDER: more colors, then a bigger grid. 45 seconds — how deep can you go?',
@@ -4131,7 +4245,7 @@ const GAMES = [
 },
 
 /* ---- 19. JAYWALK — hop across endless traffic ---- */
-{ id:'jaywalk', name:'Jaywalk', tag:'Traffic never stops. Neither do you.', dur:0,
+{ id:'jaywalk', name:'Jaywalk', tag:'Traffic never stops. Neither do you.', dur:0, tie:true,
   unit:'steps', lowerBetter:false, fmt:v=>fmtN(v)+' steps',
   grad:'linear-gradient(160deg,#39B54A,#1E7A2E)',
   how:'Guide Bit the badger — Bitso\'s furriest HODLer, clutching his precious ₿ — across the traffic. Tap (or press ↑) to hop forward, ← → to sidestep between lanes. It\'s almost all road out there, and it only gets faster. Every row forward is +1 — get clipped once and the coin goes flying.',
@@ -4444,7 +4558,7 @@ const GAMES = [
 },
 
 /* ---- 21. BLOCK GUESSER — a 3D platform of cubes drifts across. Count them. ---- */
-{ id:'blocks', name:'Block Guesser', tag:'A platform of cubes drifts by. Count them.', dur:0,
+{ id:'blocks', name:'Block Guesser', tag:'A platform of cubes drifts by. Count them.', dur:0, tie:true,
   unit:'guesses', lowerBetter:false, fmt:v=>v+' right',
   how:'A floating 3D platform slides across the arena, loaded with cubes — spread out so every single one is visible. Count them as it drifts past, set your number with + and −, and lock it in whenever you\'re ready. No clock, no rush: the run lasts until your first wrong count. Every round the platform drifts faster — then the cube count starts creeping up too.',
   grad:'linear-gradient(160deg,#8B5CF6,#4C2A9E)',
@@ -4549,7 +4663,7 @@ const GAMES = [
 },
 
 /* ---- 22. ODD COIN OUT — one coin is a shade off ---- */
-{ id:'oddcoin', name:'Odd Coin Out', tag:'One coin is a shade off. Find it.', dur:30,
+{ id:'oddcoin', name:'Odd Coin Out', tag:'One coin is a shade off. Find it.', dur:30, tie:true,
   unit:'coins', lowerBetter:false, fmt:v=>v+' spotted',
   grad:'linear-gradient(160deg,#FF4FA0,#93195E)',
   how:'Nine freshly minted coins, identical — except one came out a shade off. Tap the impostor. Every catch shrinks the difference until it\'s nearly invisible, and later the mint adds extra coins. A wrong tap freezes you for 1.5 seconds. 30 on the clock.',
@@ -4598,7 +4712,7 @@ const GAMES = [
 },
 
 /* ---- 23. CHAIN SNAKE — grow the chain, dodge the ❌ ---- */
-{ id:'snake', name:'Chain Snake', tag:'Every coin grows the chain — and the danger.', dur:0,
+{ id:'snake', name:'Chain Snake', tag:'Every coin grows the chain — and the danger.', dur:0, tie:true,
   unit:'coins', lowerBetter:false, fmt:v=>fmtN(v)+' coins',
   grad:'linear-gradient(160deg,#3DDC64,#0E5A2B)',
   how:'Snake, Bitso edition. Steer the chain with arrows / WASD (swipe on mobile) and eat coins: each one adds a block to your chain, speeds it up — and drops a new ❌ on the board. Wall, ❌ or your own tail ends the run.',
@@ -5519,7 +5633,7 @@ function beginGame(gid, mode, isRetry){
     if(locked){
       if(mode==='warmup') locked.w = (locked.w||0) + 1;
       else if(isRetry) locked.retryPlayed = true;
-      else locked.realStarted = true;
+      else { locked.realStarted = true; claimRun(); }   /* reclamo el turno del día en la nube: incógnito u otro equipo ya no sirve */
       savePlayer();
     }
     sfx(880,.2,'sine',.15);
@@ -5623,7 +5737,7 @@ function showScoreScreen(g, val, retry){
     <p class="mt" style="margin-top:14px">Now validate your run — one Bitso question locks in your score.</p>
     <div class="mrow">
       ${retry ? '' : `<button class="btn ghost" onclick='showSecondChance("${g.id}")'>🎤 Retry the run — costs a joke</button>`}
-      <button class="btn big" onclick='showTrivia("${g.id}")'>Answer the question</button>
+      <button class="btn big" onclick='${tbGame(g) ? `startTieBreak("${g.id}")` : `showTrivia("${g.id}")`}'>${tbGame(g) ? '⏱ Tie-breaker, then the question' : 'Answer the question'}</button>
     </div>
   `);
   if(val!==null) sWin();
@@ -5871,6 +5985,54 @@ function paintStudy(){
     </div>`;
 }
 function showKeyMessages(tid){ openStudy(tid, true); }
+/* ============================================================
+   DESEMPATE CRONOMETRADO — un acertijo extra, al milisegundo.
+   Se juega SIEMPRE (no solo al empatar) porque el torneo es asíncrono:
+   quien resuelve más rápido gana el empate cuando dos sacan el mismo puntaje.
+   ============================================================ */
+function tbGame(g){ return !!(g && g.tie); }
+function startTieBreak(gid, after){
+  const g = gameById(gid);
+  if(!tbGame(g) || !lastRun || lastRun.val == null){ (after||(()=> showTrivia(gid)))(); return; }
+  const FACES = ['','⚀','⚁','⚂','⚃','⚄','⚅'];
+  const n = randi(2,3);
+  const vals = Array.from({length:n}, ()=> randi(1,6));
+  const sum = vals.reduce((a,b)=> a+b, 0);
+  const wrongs = new Set(); let guard = 0;
+  while(wrongs.size < 3 && guard++ < 60){ const w = sum + randi(-2,2); if(w !== sum && w >= n && w <= n*6) wrongs.add(w); }
+  while(wrongs.size < 3) wrongs.add(sum + wrongs.size + 1);
+  const opts = shuffle([sum, ...wrongs]);
+  let pen = 0, done = false;
+  modal(`
+    <div class="mi">⏱</div>
+    <h2>Tie-breaker — one last sum</h2>
+    <p class="mt">If someone ties your score today, the fastest here wins the spot. Milliseconds count.</p>
+    <div class="tb-dice">${vals.map(v=> `<span>${FACES[v]}</span>`).join('')}</div>
+    <div class="tb-opts" id="tb-o"></div>
+    <div class="tb-note" id="tb-n">Tap the right total 👆</div>
+  `);
+  const box = $('#tb-o');
+  const t0 = performance.now();
+  opts.forEach(v=>{
+    const b = document.createElement('button');
+    b.className = 'tb-b'; b.textContent = v;
+    b.onclick = ()=>{
+      if(done) return;
+      if(v === sum){
+        done = true;
+        const ms = Math.round(performance.now() - t0 + pen);
+        lastRun.tb = ms;
+        b.classList.add('ok'); sGood();
+        const nEl = $('#tb-n'); if(nEl) nEl.innerHTML = `<b style="color:var(--neon)">${(ms/1000).toFixed(3)}s</b> — locked in as your tie-breaker`;
+        setTimeout(()=>{ closeModal(); (after||(()=> showTrivia(gid)))(); }, 850);
+      } else {
+        pen += 1500; b.classList.add('bad'); sBad();
+        const nEl = $('#tb-n'); if(nEl) nEl.textContent = 'Wrong — +1.5s penalty. Try again!';
+      }
+    };
+    box.appendChild(b);
+  });
+}
 function showTrivia(gid){
   const g = gameById(gid);
   const q = pickQuestion();
@@ -6131,9 +6293,15 @@ function copyCode(c){
    SCORING ENGINE v2 — fixed 100→10 scale + day events + All-in
    ============================================================ */
 function basePts(rank, N){
-  if(N <= 1) return 100;
-  const step = Math.min(15, 90 / (N - 1));   /* fair in small fields: nobody drops more than 15 pts per position */
-  return Math.max(10, Math.round(100 - step * (rank - 1)));
+  if(N <= 1) return 125;
+  /* percentil convexo: premia de verdad el top cuando hay mucha gente…
+     …pero nunca cae más de 15 pts por posición, para que en grupos chicos no haya abismos */
+  const frac = (N - rank) / (N - 1);
+  const convex = 10 + Math.round(70 * Math.pow(frac, 1.6));
+  const gentle = 100 - 15 * (rank - 1);
+  let base = Math.max(10, convex, gentle);
+  if(N >= 10) base += (rank === 1 ? 25 : rank === 2 ? 15 : rank === 3 ? 8 : 0);   /* bonus de podio */
+  return base;
 }
 function dayEvent(t, date){ const d = (t && t.days || []).find(x=> x.date===date); return (d && d.ev && d.ev.k) ? d.ev : null; }
 function evLabel(ev){
@@ -6173,33 +6341,58 @@ function iqAnnounce(t){
   if(dirty){ saveState._quiet = true; try{ saveState(); }catch(e){} saveState._quiet = false; }
 }
 function dayRows(t, date){
-  const rs = (t.results||[]).filter(r=> r.date===date);
+  const rs = (t.results||[]).filter(r=> r.date===date && r.value != null);   /* las corridas iniciadas sin terminar no puntúan */
   if(!rs.length) return [];
   const day = (t.days||[]).find(d=>d.date===date);
   const g = day && day.gameId ? gameById(day.gameId) : null;
   const ev = (day && day.ev && day.ev.k) ? day.ev : null;
-  const sorted = [...rs].sort((a,b)=> (g && g.lowerBetter) ? a.value-b.value : b.value-a.value);
-  const N = sorted.length;
-  let rank = 0;
-  return sorted.map((r,i)=>{
-    if(i===0 || r.value !== sorted[i-1].value) rank = i+1;   /* ties share the rank AND the full points */
+  /* orden: mejor valor primero; empate se rompe por el desempate cronometrado (ms) */
+  const cmp = (a,b)=>{
+    const dv = (g && g.lowerBetter) ? a.value-b.value : b.value-a.value;
+    if(dv) return dv;
+    return (a.tb == null ? 9e15 : a.tb) - (b.tb == null ? 9e15 : b.tb);
+  };
+  const same = (a,b)=> a.value === b.value && ((a.tb == null && b.tb == null) || a.tb === b.tb);
+  /* DÍA CONGELADO: quienes jugaron ese día en vivo fijan el tamaño del campo.
+     Los que llegan después por Catch-Up reciben sus puntos sin mover los de nadie. */
+  const live = rs.filter(r=> !r.late).sort(cmp);
+  const late = rs.filter(r=> r.late).sort(cmp);
+  const closedN = live.length || rs.length;
+  const sorted = live.length ? live : rs.slice().sort(cmp);
+  const N = closedN;
+  const score = (r, rank)=>{
     const base = basePts(rank, N);
     let mult = 1; const tags = [];
     if(ev && ev.k==='moon'){ mult *= 1 + (ev.v||200)/100; tags.push('🚀 +'+(ev.v||200)+'%'); }
     const ED = t.evDef || {};
     if(ED.dhOn !== false){
-      /* milestone days only: the row exists = played & nailed it, so today counts in the streak */
       const stT = iqStreakBefore(t, r.name, date) + 1;
       const req = ED.dhreq || 3;
       const hit = stT >= req && (ED.dhMode === 'once' ? stT === req : stT % req === 0);
       if(hit){ mult *= 1 + (ED.dhv||50)/100; tags.push('💎 +'+(ED.dhv||50)+'%'); }
     }
     if(r.allin){ const am = ED.allin || 2; mult *= am; tags.push('🃏 ALL-IN ×'+am); }
-    if(mult > 4) mult = 4;                                   /* sanity cap: +300% total */
+    if(mult > 4) mult = 4;                                   /* tope de cordura: +300% */
     let pts = Math.round(base * mult);
     if(ev && ev.k==='air'){ pts += (ev.v||25); tags.push('🪂 +'+(ev.v||25)); }
+    if(r.late) tags.push('⏰ catch-up');
     return {...r, rank, base, mult, tags, pts, g};
+  };
+  let rank = 0;
+  const out = sorted.map((r,i)=>{
+    if(i===0 || !same(r, sorted[i-1])) rank = i+1;   /* empates reales comparten rango y puntos completos */
+    return score(r, rank);
   });
+  /* los de Catch-Up se miden contra el campo YA CERRADO: reciben lo que les toca sin quitarle puntos a nadie */
+  if(live.length && late.length){
+    late.forEach(r=>{
+      let rk = 1;
+      live.forEach(x=>{ if(cmp(x, r) < 0) rk++; });
+      out.push(score(r, rk));
+    });
+    out.sort((a,b)=> a.rank - b.rank || cmp(a,b));
+  }
+  return out;
 }
 function standings(t){
   if(!t) return [];
@@ -6300,6 +6493,31 @@ function cuStart(date){
   beginGame(day.gameId, 'real', false);
 }
 function cuEnd(){ cuDate = null; renderArena(); }
+function claimRun(){
+  /* fila con value:null = "turno tomado". No puntúa, pero cualquier otro navegador la ve al sincronizar. */
+  const t = (typeof curT === 'function') ? curT() : null;
+  if(!t || !player || !player.name) return;
+  const dk = effK(t);
+  if((t.results||[]).some(r=> r.date===dk && r.name===player.name)) return;
+  const claim = { date:dk, name:player.name, avatar:player.avatar, value:null, started:true, ts:Date.now() };
+  if(cuDate) claim.late = true;
+  (t.results = t.results||[]).push(claim);
+  saveState();
+  cloudPushResult(t, claim);
+}
+function syncClaims(){
+  /* si la nube dice que ya empecé hoy (desde otro equipo), cierro el turno aquí también */
+  (state.tournaments||[]).forEach(t=>{
+    const dk = tKey(t);
+    const mine = (t.results||[]).find(r=> r.date===dk && r.name===(player&&player.name));
+    if(!mine) return;
+    player.daily = player.daily || {};
+    const k = (t.code||'') + '|' + dk;
+    const d = player.daily[k] = player.daily[k] || {w:0, real:false, retried:false};
+    if(mine.value == null) d.realStarted = true; else d.real = true;
+  });
+  savePlayer();
+}
 function daily(t){
   player.daily = player.daily || {};
   const k = (t.code||'') + '|' + effK(t);
@@ -6420,6 +6638,7 @@ function finishSetup(){
   if(!suAv){ $('#su-err').textContent = 'Pick an avatar too — the arena needs a face.'; sBad(); return; }
   $('#su-err').textContent = '';
   player.name = name; player.avatar = suAv; savePlayer();
+  try{ cloudPushMe(); }catch(e){}
   paintChips();
   if(editing){ editing = false; goHome(); toast('Player updated ✨'); return; }
   if(joinPending){ const c = joinPending; joinPending = null; completeJoin(c); }
@@ -6905,7 +7124,7 @@ function sendGif(i){
   refreshFeed(); sGood();
 }
 function toggleGifPicker(){ const p = $('#gif-picker'); if(p) p.classList.toggle('hidden'); }
-let pointsView = 'today';
+let pointsView = 'today', pointsShowAll = false;
 function setPointsView(v){ pointsView = v; const t = curT(); if(t) renderSide(t); sTap(); }
 function pointsHTML(t){
   const nav = `<div class="tabs2" style="margin:2px 0 14px">
@@ -6987,8 +7206,14 @@ function pointsOverallHTML(t){
     return `<div class="pcol ${cls}"><div class="pav ${cls==='p1'?'crowned':''}">${avatarHTML(s.avatar)}</div><div class="pn">${esc(s.name)}</div><div class="pp">${s.pts} pts · ${s.days} day${s.days===1?'':'s'}</div><div class="pbar">${med}</div></div>`;
   }).join('')}</div>`;
   let rank = 0;
-  html += st.map((s,i)=>{
-    if(i===0 || s.pts !== st[i-1].pts) rank = i+1;
+  const MAXROWS = 60;                              /* con cientos de jugadores no pintamos todo de golpe */
+  const myIdx = st.findIndex(x=> x.name===player.name);
+  const showAll = pointsShowAll || st.length <= MAXROWS;
+  const visible = showAll ? st : st.slice(0, MAXROWS);
+  if(!showAll && myIdx >= MAXROWS) visible.push(st[myIdx]);
+  html += visible.map((s,i)=>{
+    if(i===0 || s.pts !== st[i-1].pts) rank = (showAll || i < MAXROWS) ? i+1 : myIdx+1;
+    if(!showAll && i >= MAXROWS) rank = myIdx + 1;
     return `<div class="lb-row ${s.name===player.name?'me':''}">
       <div class="rk">${rank}</div>
       <span class="av ${rank===1?'crowned':''}">${avatarHTML(s.avatar)}</span>
@@ -6996,16 +7221,18 @@ function pointsOverallHTML(t){
       <div class="pts">${s.pts} pts</div>
     </div>`;
   }).join('');
+  if(!showAll) html += `<button class="btn ghost" style="width:100%; margin-top:12px" onclick="pointsShowAll=true; renderSide(curT())">Show all ${st.length} players ↓</button>`;
   return html;
 }
 
 /* ---------- countdown to the next game (midnight) ---------- */
 function tickCountdown(){
-  const now = new Date();
-  const h = tourStartHour(curT());
-  const mid = new Date(now); mid.setHours(h,0,0,0);
-  if(mid <= now) mid.setDate(mid.getDate()+1);
-  let s = Math.max(0, Math.floor((mid - now)/1000));
+  const h = tourStartHour(typeof curT==='function' ? curT() : null);
+  const p = tzParts(Date.now());                       /* hora actual EN MÉXICO */
+  const secsNow = p.h*3600 + p.mi*60 + p.s;
+  const secsStart = h*3600;
+  let s = secsStart - secsNow;
+  if(s <= 0) s += 86400;
   const hh = String(Math.floor(s/3600)).padStart(2,'0');
   const mm = String(Math.floor((s%3600)/60)).padStart(2,'0');
   const ss = String(s%60).padStart(2,'0');
@@ -7061,7 +7288,7 @@ function showScoreScreen(g, val, retry){
     <p class="mt">${esc(g.name)}${pb ? ' · <b style="color:var(--neon)">Personal best!</b>' : ''}</p>
     <p class="mt" style="margin-top:16px">One Bitso question decides if this lands on the board. No timer — choose wisely.</p>
     <div class="mrow">
-      <button class="btn big" onclick='showTrivia("${g.id}")'>Answer the question</button>
+      <button class="btn big" onclick='${tbGame(g) ? `startTieBreak("${g.id}")` : `showTrivia("${g.id}")`}'>${tbGame(g) ? '⏱ Tie-breaker, then the question' : 'Answer the question'}</button>
     </div>
   `);
   if(val!==null) sWin();
@@ -7106,12 +7333,15 @@ function acceptJoke(gid){
 function recordResult(t, g, val){
   const _dk = effK(t);
   const i = t.results.findIndex(r=> r.date===_dk && r.name===player.name);
-  const prev = i>=0 ? t.results[i].value : undefined;
+  const prevRaw = i>=0 ? t.results[i].value : undefined;
+  const prev = prevRaw == null ? undefined : prevRaw;      /* un turno reclamado (value null) siempre se llena */
   const better = prev===undefined || (g.lowerBetter ? val<prev : val>prev);
   const ai = !!(player.allin && player.allin[t.id]===_dk) || undefined;
-  const em = player.email || undefined;
-  if(i>=0){ if(better) t.results[i] = {date:_dk, gameId:g.id, name:player.name, avatar:player.avatar, value:val, allin:ai, email:em}; }
-  else t.results.push({date:_dk, gameId:g.id, name:player.name, avatar:player.avatar, value:val, allin:ai, email:em});
+  const _row = {date:_dk, gameId:g.id, name:player.name, avatar:player.avatar, value:val, allin:ai};
+  if(cuDate) _row.late = true;                              /* Catch-Up: no mueve los puntos de quienes jugaron ese día */
+  if(lastRun && lastRun.tb != null) _row.tb = lastRun.tb;    /* desempate cronometrado en milésimas */
+  if(i>=0){ if(better) t.results[i] = _row; }
+  else t.results.push(_row);
   (t.chat = t.chat||[]).push({
     id:uid(), date:_dk, name:player.name, avatar:player.avatar,
     text:'scored '+g.fmt(val)+(prev!==undefined ? (better?' — improved!':' (kept '+g.fmt(prev)+')') : ''),
@@ -7184,11 +7414,12 @@ window.addEventListener('storage', e=>{
   if(e.key===LS_KEY && !run){ if(syncShared()) rerenderCurrent(); }
 });
 setInterval(async()=>{
-  if(run) return;
+  if(run) return;                                   /* nunca sincroniza mientras juegas */
+  if(document.hidden) return;                       /* pestaña en segundo plano: no gasta datos */
   const a = syncShared();
   const b = await cloudPull();
-  if(a || b) rerenderCurrent();
-}, 4000);
+  if(a || b){ try{ syncClaims(); }catch(e){} rerenderCurrent(); }
+}, 12000);
 
 /* ---------- boot ---------- */
 refreshCustom();
@@ -7232,7 +7463,13 @@ async function authHandleCallback(){
     const email = ((u && u.email) || '').toLowerCase();
     if(email && email.slice(-(AUTH_DOMAIN.length+1)) === '@' + AUTH_DOMAIN){
       const name = (u.user_metadata && (u.user_metadata.full_name || u.user_metadata.name)) || email.split('@')[0];
-      localStorage.setItem(AUTH_LS, JSON.stringify({email, name, ts: Date.now()}));
+      /* guardamos el token: con él, cada escritura a la nube va firmada por ESTE usuario
+         (así Supabase puede impedir que alguien escriba puntos a nombre de otro) */
+      localStorage.setItem(AUTH_LS, JSON.stringify({
+        email, name, ts: Date.now(),
+        tok, rt: p.get('refresh_token') || null,
+        exp: Date.now() + (parseInt(p.get('expires_in')||'3600',10) * 1000)
+      }));
     } else {
       localStorage.removeItem(AUTH_LS);
       window.__authRejected = email || 'that account';
@@ -7295,6 +7532,7 @@ async function authInit(){
         if(su && !su.value) su.value = u.name || '';
       }
       player.email = u.email; savePlayer();
+      try{ cloudPushMe(); }catch(e){}      /* el correo se guarda UNA vez en el roster, no en cada jugada */
     }catch(e){}
   } else {
     authGateShow();
