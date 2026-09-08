@@ -1609,7 +1609,8 @@ function migrateState(s){
    ============================================================ */
 const CLOUD_URL = 'https://hvxvgdylfzgxvdyapwns.supabase.co';
 const CLOUD_KEY = 'sb_publishable_c8RePdCohVa_2ZZaNMcMcQ_SEltDHNM';
-const CLOUD = { on: /^https:/.test(CLOUD_URL) && CLOUD_KEY.length > 20, admin:false, busy:false, pushT:null, pending:false, lastPush:'' };
+const CLOUD = { on: /^https:/.test(CLOUD_URL) && CLOUD_KEY.length > 20, admin:false, busy:false, pushT:null, pending:false, lastPush:'', roster:null };
+/* roster: null = sin verificar · true = tabla players lista · false = modo compatible (foto viaja en la fila) */
 function authToken(){
   try{
     const u = JSON.parse(localStorage.getItem('bitsoiq_auth')||'null');
@@ -1683,8 +1684,40 @@ function cloudSchedulePush(){
 function rosterGet(name){ return (state.roster || {})[name] || null; }
 function rosterAvatar(name, fallback){ const r = rosterGet(name); return (r && r.avatar) || fallback || '🦊'; }
 function rosterEmail(name){ const r = rosterGet(name); return (r && r.email) || null; }
-function hydrateRow(o){ if(o && o.name && !o.avatar){ const a = rosterAvatar(o.name, null); if(a) o.avatar = a; } return o; }
-function slimRow(o){ const c = Object.assign({}, o); delete c.avatar; delete c.email; return c; }
+function myAvatar(){
+  const me = (typeof player !== 'undefined' && player) ? player : (state.profile || null);
+  return me ? me.avatar : null;
+}
+function myName(){
+  const me = (typeof player !== 'undefined' && player) ? player : (state.profile || null);
+  return me ? me.name : null;
+}
+function hydrateRow(o, prev){
+  /* cadena de respaldo para la foto: la fila → el roster → lo que ya teníamos → si soy yo, la mía */
+  if(o && o.name && !o.avatar){
+    const r = rosterGet(o.name);                       /* directo al roster: sin valor por defecto que corte la cadena */
+    const a = (r && r.avatar)
+           || (prev && prev.avatar)
+           || (o.name === myName() ? myAvatar() : null);
+    if(a) o.avatar = a;
+  }
+  return o;
+}
+function rehydrateAll(){
+  /* cuando llega el roster, rellenamos las fotos de lo que ya estaba en pantalla */
+  (state.tournaments||[]).forEach(t=>{
+    (t.results||[]).forEach(r=> hydrateRow(r));
+    (t.chat||[]).forEach(m=> hydrateRow(m));
+  });
+}
+function slimRow(o){
+  const c = Object.assign({}, o);
+  delete c.email;
+  /* si la tabla players aún no existe, la foto viaja en la fila como antes:
+     así nadie se queda sin avatar aunque falte correr el SQL */
+  if(CLOUD.roster !== false) delete c.avatar;
+  return c;
+}
 function cloudPushMe(){
   if(!CLOUD.on) return Promise.resolve();
   const me = (typeof player !== 'undefined' && player) ? player : (state.profile || null);
@@ -1694,7 +1727,11 @@ function cloudPushMe(){
   if(CLOUD._meSig === sig) return CLOUD._meP || Promise.resolve();
   CLOUD._meSig = sig;
   CLOUD._meP = cloudUpsert('players', [{ name: me.name, data: { avatar: me.avatar, email: em, ts: Date.now() } }], 'name')
-    .catch(()=>{});
+    .then(r=>{
+      if(r && r.ok === false){ CLOUD.roster = false; CLOUD._meSig = null; }   /* tabla ausente o sin permiso → modo compatible */
+      else CLOUD.roster = true;
+    })
+    .catch(()=>{ CLOUD.roster = false; CLOUD._meSig = null; });
   return CLOUD._meP;
 }
 function cloudPushResult(t, rec){
@@ -1776,14 +1813,21 @@ async function cloudPull(){
     const pq = CLOUD.m.plAt
       ? 'players?select=*&updated_at=gt.' + encodeURIComponent(CLOUD.m.plAt) + '&order=updated_at.asc&limit=500'
       : 'players?select=*&order=updated_at.asc&limit=1000';
-    const ppl = await get(pq);
+    const pplR = await cfetch(pq).catch(()=> null);
+    if(pplR && pplR.ok === false) CLOUD.roster = false;
+    const ppl = (pplR && pplR.ok) ? await pplR.json().catch(()=> []) : [];
     if(Array.isArray(ppl) && ppl.length){
+      CLOUD.roster = true;
       const ros = {};
       ppl.forEach(r=>{
         if(r && r.name && r.data) ros[r.name] = r.data;
         if(r && r.updated_at && (!CLOUD.m.plAt || r.updated_at > CLOUD.m.plAt)) CLOUD.m.plAt = r.updated_at;
       });
-      if(Object.keys(ros).length){ state.roster = Object.assign(state.roster||{}, ros); changed = true; }
+      if(Object.keys(ros).length){
+        state.roster = Object.assign(state.roster||{}, ros);
+        rehydrateAll();
+        changed = true;
+      }
     }
 
     /* --- chat: incremental by timestamp --- */
@@ -1837,7 +1881,7 @@ async function cloudPull(){
         const i = t.results.findIndex(x=> x.date===r.date && x.name===r.name);
         const cur = JSON.stringify(i>=0 ? t.results[i] : null);
         if(cur !== JSON.stringify(r.data)){
-          if(i>=0) t.results[i] = hydrateRow(r.data); else t.results.push(hydrateRow(r.data));
+          if(i>=0) t.results[i] = hydrateRow(r.data, t.results[i]); else t.results.push(hydrateRow(r.data));
           changed = true;
         }
         (seen[r.tid] = seen[r.tid]||{})[r.date + '|' + r.name] = 1;
@@ -1892,8 +1936,8 @@ function slimState(){
     const keep = (t.days||[]).filter(d=> d.gameId).map(d=> d.date).slice(-4);
     const cut = keep.length ? keep[0] : '0000-00-00';
     return Object.assign({}, t, {
-      results: (t.results||[]).filter(r=> r.date >= cut).map(slimRow),
-      chat: (t.chat||[]).slice(-80).map(slimRow),
+      results: (t.results||[]).filter(r=> r.date >= cut),
+      chat: (t.chat||[]).slice(-80),
     });
   });
   c.triviaLog = (state.triviaLog||[]).slice(-1200);
