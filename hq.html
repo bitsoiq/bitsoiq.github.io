@@ -971,6 +971,12 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
             <button class="btn" style="width:100%; margin-top:10px" onclick="saveProfile()">Save profile</button>
           </div>
           <div class="card">
+            <h3>💾 Backup</h3>
+            <p class="cardhint">El plan gratuito de Supabase no hace respaldos automáticos. Bájate una copia de todo (torneos, resultados, preguntas, jugadores, historial) cuando quieras.</p>
+            <button class="btn" style="width:100%; margin-top:10px" onclick="downloadBackup()">⬇️ Download full backup (.json)</button>
+            <p style="font-size:11.5px; color:var(--ink3); font-weight:700; margin-top:8px">Recomendado: una vez por semana durante el torneo. El archivo se guarda en tus Descargas.</p>
+          </div>
+          <div class="card">
             <h3>⚙️ App settings</h3>
             <div class="frow">
               <div>Sound effects<div class="d">Beeps, plucks and fanfares.</div></div>
@@ -7616,6 +7622,41 @@ function autoArchive(){
   if(archived) toast('Finished tournaments saved to History 🏁');
 }
 /* --- history --- */
+async function downloadBackup(){
+  toast('Preparando respaldo…');
+  const pack = {
+    exportedAt: new Date().toISOString(),
+    app: 'BitsoIQ',
+    tournaments: state.tournaments || [],
+    history: state.history || [],
+    questions: state.questions || [],
+    triviaLog: state.triviaLog || [],
+    jokes: state.jokes || [],
+    chances: state.chances || {},
+    customGames: state.customGames || [],
+    roster: state.roster || {},
+    emails: state.emails || {},
+  };
+  /* completamos con lo que viva en la nube y no esté en memoria */
+  if(CLOUD.on){
+    const get = p => cfetch(p).then(r=> r.ok ? r.json() : []).catch(()=> []);
+    try{
+      const [res, chat, triv, ppl, mails] = await Promise.all([
+        get('results?select=*'), get('chat?select=*'), get('trivia_log?select=*'),
+        get('players?select=*'), get('player_emails?select=*')
+      ]);
+      pack.cloud = { results:res, chat:chat, trivia_log:triv, players:ppl, player_emails:mails };
+    }catch(e){}
+  }
+  const blob = new Blob([JSON.stringify(pack, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'BitsoIQ-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  const n = (pack.cloud && pack.cloud.results ? pack.cloud.results.length : 0);
+  toast('Respaldo listo ✅ ' + n + ' resultados incluidos'); sGood();
+}
 function renderHistory(){
   const el = $('#adm-hist');
   const _hseen = new Set();
