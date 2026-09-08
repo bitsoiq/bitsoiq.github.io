@@ -1568,7 +1568,9 @@ function authRefresh(u){
     }
   }).catch(()=>{ _refreshing = false; });
 }
-authHandleCallback();
+/* el candado tiene que ESPERAR a que esto termine: si no, decide antes de
+   que Google haya terminado de responder y te vuelve a pedir el login */
+window.AUTH_READY = authHandleCallback();
 function cfetch(path, opt){
   opt = opt || {};
   const h = { 'apikey': CLOUD_KEY, 'Content-Type': 'application/json' };
@@ -8456,15 +8458,19 @@ cloudPull().then(ch=>{ if(ch) cloudAdminRerender(); });
     g.remove();
   }
   function me(){ try{ return (typeof authUser==='function') ? authUser() : null; }catch(e){ return null; } }
+
+  /* si venimos de Google, esperamos a que la sesión quede guardada ANTES de decidir */
+  Promise.resolve(window.AUTH_READY).catch(function(){}).then(function(){ startGate(); });
+
+  function startGate(){
   var u = me();
   /* paso 1: identidad de Google. Sin ella, la nube no acepta escrituras de admin. */
-  if(!u || !u.email){
+  if(!u || !u.email || !u.tok){
+    document.getElementById('iq-gate-sub').textContent = 'Admins only — sign in with your Bitso account';
     document.getElementById('iq-gate-goog').onclick = function(){
+      err.textContent = 'Opening Google…';
       try{ authStart(); }catch(e){ err.textContent = 'Could not start Google sign-in.'; }
     };
-    setTimeout(function(){
-      try{ if(window.location.hash.indexOf('access_token=') >= 0) location.reload(); }catch(e){}
-    }, 400);
     return;
   }
   document.getElementById('iq-step1').style.display='none';
@@ -8488,6 +8494,7 @@ cloudPull().then(ch=>{ if(ch) cloudAdminRerender(); });
   document.getElementById('iq-gate-btn').onclick=go;
   inp.addEventListener('keydown',function(e){ if(e.key==='Enter') go(); });
   setTimeout(function(){ inp.focus(); },150);
+  }
 })();
 </script>
 </body>
