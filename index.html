@@ -1738,7 +1738,9 @@ function cloudPushMe(){
   const sig = me.name + '|' + (me.avatar||'') + '|' + (em||'');
   if(CLOUD._meSig === sig) return CLOUD._meP || Promise.resolve();
   CLOUD._meSig = sig;
-  CLOUD._meP = cloudUpsert('players', [{ name: me.name, data: { avatar: me.avatar, email: em, ts: Date.now() } }], 'name')
+  /* la foto va al roster público (todos la ven); el correo va a una tabla aparte que solo el admin puede leer */
+  if(em) cloudUpsert('player_emails', [{ name: me.name, email: em }], 'name').catch(()=>{});
+  CLOUD._meP = cloudUpsert('players', [{ name: me.name, data: { avatar: me.avatar, ts: Date.now() } }], 'name')
     .then(r=>{
       if(r && r.ok === false){ CLOUD.roster = false; CLOUD._meSig = null; }   /* tabla ausente o sin permiso → modo compatible */
       else CLOUD.roster = true;

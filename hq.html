@@ -1622,7 +1622,21 @@ function avOf(o){
 }
 function rosterGet(name){ return (state.roster || {})[name] || null; }
 function rosterAvatar(name, fallback){ const r = rosterGet(name); return (r && r.avatar) || fallback || '🦊'; }
-function rosterEmail(name){ const r = rosterGet(name); return (r && r.email) || null; }
+function rosterEmail(name){
+  const e = (state.emails || {})[name];
+  if(e) return e;
+  const r = rosterGet(name);
+  return (r && r.email) || null;      /* compatibilidad con datos viejos */
+}
+function pullEmails(){
+  /* tabla privada: si no eres admin, Supabase simplemente no devuelve nada */
+  if(!CLOUD.on) return Promise.resolve();
+  return cfetch('player_emails?select=name,email').then(r=> r.ok ? r.json() : []).then(rows=>{
+    if(!Array.isArray(rows) || !rows.length) return;
+    state.emails = state.emails || {};
+    rows.forEach(r=>{ if(r && r.name && r.email) state.emails[r.name] = r.email; });
+  }).catch(()=>{});
+}
 function myAvatar(){
   const me = (typeof player !== 'undefined' && player) ? player : (state.profile || null);
   return me ? me.avatar : null;
@@ -1665,7 +1679,9 @@ function cloudPushMe(){
   const sig = me.name + '|' + (me.avatar||'') + '|' + (em||'');
   if(CLOUD._meSig === sig) return CLOUD._meP || Promise.resolve();
   CLOUD._meSig = sig;
-  CLOUD._meP = cloudUpsert('players', [{ name: me.name, data: { avatar: me.avatar, email: em, ts: Date.now() } }], 'name')
+  /* la foto va al roster público (todos la ven); el correo va a una tabla aparte que solo el admin puede leer */
+  if(em) cloudUpsert('player_emails', [{ name: me.name, email: em }], 'name').catch(()=>{});
+  CLOUD._meP = cloudUpsert('players', [{ name: me.name, data: { avatar: me.avatar, ts: Date.now() } }], 'name')
     .then(r=>{
       if(r && r.ok === false){ CLOUD.roster = false; CLOUD._meSig = null; }   /* tabla ausente o sin permiso → modo compatible */
       else CLOUD.roster = true;
@@ -6834,6 +6850,11 @@ function useHistQuestions(hid){
   toast('Your next tournament starts with that question bank 📚 — create it now.');
 }
 function histInsights(hid){
+  const h = histFind(hid); if(!h) return;
+  pullEmails().then(()=>{ const el0 = document.getElementById('hins'); if(el0) { el0.remove(); histInsightsPaint(hid); } });
+  histInsightsPaint(hid);
+}
+function histInsightsPaint(hid){
   const h = histFind(hid); if(!h) return;
   const log = h.trivia || [];
   const st = h.standings || [];
