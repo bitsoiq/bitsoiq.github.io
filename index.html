@@ -7586,7 +7586,17 @@ function authGateShow(){
     </div>`;
 }
 function authGateRemove(){ const g = document.getElementById('auth-gate'); if(g) g.remove(); }
+async function authBounce(){
+  /* la consola nos mandó aquí solo para completar el login de Google: guardamos la sesión y la regresamos */
+  const to = new URLSearchParams(location.search).get('to');
+  if(!to) return false;
+  await authHandleCallback();
+  const dest = location.origin + '/' + to.replace(/^\//, '');
+  location.replace(dest);
+  return true;
+}
 async function authInit(){
+  if(await authBounce()) return;
   await authHandleCallback();
   const u = authUser();
   if(u && u.email){

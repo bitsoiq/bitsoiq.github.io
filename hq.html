@@ -1523,7 +1523,11 @@ function authUser(){
   }catch(e){ return null; }
 }
 function authStart(){
-  location.href = CLOUD_URL + '/auth/v1/authorize?provider=google&redirect_to=' + encodeURIComponent(location.origin + location.pathname);
+  /* Google regresa a la RAÍZ del sitio (la única ruta que Supabase tiene autorizada desde
+     el día uno, la misma que usan los jugadores). La app de jugadores guarda la sesión
+     y nos rebota de vuelta a la consola. Así no dependemos de configurar /hq aparte. */
+  const back = location.origin + '/?to=' + encodeURIComponent(location.pathname.replace(/^\//, '') || 'hq');
+  location.href = CLOUD_URL + '/auth/v1/authorize?provider=google&redirect_to=' + encodeURIComponent(back);
 }
 function authSignOut(){ localStorage.removeItem(AUTH_LS); location.reload(); }
 async function authHandleCallback(){
@@ -8459,6 +8463,15 @@ cloudPull().then(ch=>{ if(ch) cloudAdminRerender(); });
   }
   function me(){ try{ return (typeof authUser==='function') ? authUser() : null; }catch(e){ return null; } }
 
+  /* ¿Google o Supabase nos devolvieron un error? Lo mostramos en vez de tragárnoslo */
+  function urlError(){
+    var h = (location.hash||'').replace(/^#/,''), q = (location.search||'').replace(/^\?/,'');
+    var p = new URLSearchParams(h.indexOf('error') >= 0 ? h : q);
+    var e = p.get('error') || p.get('error_code');
+    if(!e) return null;
+    return (p.get('error_description') || e).replace(/\+/g,' ');
+  }
+
   /* si venimos de Google, esperamos a que la sesión quede guardada ANTES de decidir */
   Promise.resolve(window.AUTH_READY).catch(function(){}).then(function(){ startGate(); });
 
@@ -8467,10 +8480,24 @@ cloudPull().then(ch=>{ if(ch) cloudAdminRerender(); });
   /* paso 1: identidad de Google. Sin ella, la nube no acepta escrituras de admin. */
   if(!u || !u.email || !u.tok){
     document.getElementById('iq-gate-sub').textContent = 'Admins only — sign in with your Bitso account';
-    document.getElementById('iq-gate-goog').onclick = function(){
+    var ue = urlError();
+    if(ue){
+      err.innerHTML = '⚠️ ' + ue;
+      err.style.maxWidth = '520px'; err.style.textAlign = 'center'; err.style.lineHeight = '1.5';
+    }
+    var url = '';
+    try{ url = CLOUD_URL + '/auth/v1/authorize?provider=google&redirect_to=' + encodeURIComponent(location.origin + location.pathname); }catch(e){}
+    var btn = document.getElementById('iq-gate-goog');
+    btn.onclick = function(){
       err.textContent = 'Opening Google…';
-      try{ authStart(); }catch(e){ err.textContent = 'Could not start Google sign-in.'; }
+      if(url) location.assign(url);
+      else err.textContent = 'Could not build the sign-in URL.';
     };
+    /* enlace de respaldo, por si el botón no navega (bloqueador, iframe, etc.) */
+    var manual = document.createElement('a');
+    manual.href = url; manual.textContent = 'or open the sign-in page directly ↗';
+    manual.style.cssText = 'color:#8A8178;font-weight:800;font-size:11.5px;text-decoration:underline;margin-top:2px';
+    document.getElementById('iq-step1').appendChild(manual);
     return;
   }
   document.getElementById('iq-step1').style.display='none';
