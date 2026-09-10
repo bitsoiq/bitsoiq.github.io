@@ -1956,23 +1956,17 @@ function playedCount(t){
 }
 
 function enrolledNames(t){
-  /* Quién está DENTRO del torneo, no quién está conectado ahorita.
-     Juntamos todas las señales de que alguien entró con el código:
-     jugó, escribió en el chat, o contestó una trivia. Así también
-     cuentan los que entraron antes de que existiera el marcador nuevo. */
+  /* UNA sola definición: entró con la clave de ESTE torneo.
+     Nada de "escribió en el chat" ni "ya jugó". Solo la marca que se
+     pone en el momento de entrar con el código. */
   const s = {};
-  const add = n => { n = (n || '').trim(); if(n) s[n] = 1; };
   try{
-    (t && t.results || []).forEach(r=> add(r && r.name));
-    (t && t.chat    || []).forEach(m=> { if(m && !m.sys) add(m.name); });
-    if(t && t.id && typeof state !== 'undefined'){
-      (state.triviaLog || []).forEach(e=> { if(e && e.tid === t.id) add(e.name); });
-      const ros = state.roster || {};
-      Object.keys(ros).forEach(n=>{
-        const tids = ros[n] && ros[n].tids;
-        if(Array.isArray(tids) && tids.indexOf(t.id) >= 0) add(n);
-      });
-    }
+    if(!t || !t.id) return [];
+    const ros = (typeof state !== 'undefined' && state.roster) || {};
+    Object.keys(ros).forEach(n=>{
+      const tids = ros[n] && ros[n].tids;
+      if(Array.isArray(tids) && tids.indexOf(t.id) >= 0){ n = (n||'').trim(); if(n) s[n] = 1; }
+    });
   }catch(e){}
   return Object.keys(s);
 }
@@ -7727,11 +7721,11 @@ setInterval(tickSoon, 1000);
 /* ---------- cuánta gente hay en la arena, junto al reloj ---------- */
 function paintHeads(n, t){
   const el = $('#ar-heads'); if(!el) return;
-  const v = Math.max(n || 0, enrolledCount(t));
+  const v = (n != null) ? n : enrolledCount(t);
   if(!v){ el.style.display = 'none'; return; }
   el.style.display = '';
   el.textContent = '👥 ' + v;
-  el.title = v + ' in this tournament';
+  el.title = v + ' joined with the code';
 }
 async function refreshHeads(force){
   const t = (typeof curT === 'function') ? curT() : null;

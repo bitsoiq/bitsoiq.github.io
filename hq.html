@@ -1762,23 +1762,17 @@ function playedCount(t){
 }
 
 function enrolledNames(t){
-  /* Quién está DENTRO del torneo, no quién está conectado ahorita.
-     Juntamos todas las señales de que alguien entró con el código:
-     jugó, escribió en el chat, o contestó una trivia. Así también
-     cuentan los que entraron antes de que existiera el marcador nuevo. */
+  /* UNA sola definición: entró con la clave de ESTE torneo.
+     Nada de "escribió en el chat" ni "ya jugó". Solo la marca que se
+     pone en el momento de entrar con el código. */
   const s = {};
-  const add = n => { n = (n || '').trim(); if(n) s[n] = 1; };
   try{
-    (t && t.results || []).forEach(r=> add(r && r.name));
-    (t && t.chat    || []).forEach(m=> { if(m && !m.sys) add(m.name); });
-    if(t && t.id && typeof state !== 'undefined'){
-      (state.triviaLog || []).forEach(e=> { if(e && e.tid === t.id) add(e.name); });
-      const ros = state.roster || {};
-      Object.keys(ros).forEach(n=>{
-        const tids = ros[n] && ros[n].tids;
-        if(Array.isArray(tids) && tids.indexOf(t.id) >= 0) add(n);
-      });
-    }
+    if(!t || !t.id) return [];
+    const ros = (typeof state !== 'undefined' && state.roster) || {};
+    Object.keys(ros).forEach(n=>{
+      const tids = ros[n] && ros[n].tids;
+      if(Array.isArray(tids) && tids.indexOf(t.id) >= 0){ n = (n||'').trim(); if(n) s[n] = 1; }
+    });
   }catch(e){}
   return Object.keys(s);
 }
@@ -6578,26 +6572,14 @@ async function rosterPull(force){
   return [];
 }
 function hcRows(t, ppl){
-  /* una fila por persona, con lo más específico que sepamos de ella */
-  const by = {};
-  const touch = n => { n = (n||'').trim(); if(!n) return null;
-    return (by[n] = by[n] || { name:n, joined:false, talked:false, played:0, best:0, when:0 }); };
-
+  /* una fila por persona que entró con la clave de este torneo */
+  const out = [];
   (ppl || []).forEach(r=>{
     const tids = r && r.data && r.data.tids;
-    if(Array.isArray(tids) && t && tids.indexOf(t.id) >= 0){
-      const o = touch(r.name); if(o){ o.joined = true; o.when = Math.max(o.when, Date.parse(r.updated_at||0) || 0); }
-    }
+    if(!Array.isArray(tids) || !t || tids.indexOf(t.id) < 0) return;
+    out.push({ name:(r.name||'').trim(), when: Date.parse(r.updated_at||0) || 0 });
   });
-  (t && t.chat || []).forEach(m=>{ if(m && !m.sys){ const o = touch(m.name); if(o){ o.talked = true; o.when = Math.max(o.when, m.ts||0); } } });
-  (t && t.results || []).forEach(r=>{
-    const o = touch(r && r.name);
-    if(o){ o.played++; o.best = Math.max(o.best, +r.pts || 0); o.when = Math.max(o.when, r.ts || 0); }
-  });
-  (state.triviaLog || []).forEach(e=>{ if(e && e.tid === (t&&t.id)){ const o = touch(e.name); if(o) o.when = Math.max(o.when, e.ts||0); } });
-
-  return Object.keys(by).map(k=> by[k]).sort((a,b)=>
-    (b.played - a.played) || (b.when - a.when) || a.name.localeCompare(b.name));
+  return out.filter(x=> x.name).sort((a,b)=> (b.when - a.when) || a.name.localeCompare(b.name));
 }
 function hcPanelHTML(t, rows, stamp){
   const em = state.emails || {};
@@ -6622,13 +6604,57 @@ function hcPanelHTML(t, rows, stamp){
   <div style="margin-top:14px; text-align:right"><button class="btn" onclick="closeModal()">Close</button></div>`;
 }
 
+/* ---------- rellenar la marca de quien ya entró pero es de antes ----------
+   Si alguien ya jugó o escribió en ESTE torneo, es porque entró con la clave.
+   Le ponemos la marca para que el conteo sea exacto desde hoy y no parezca
+   que hay menos gente de la que hay. Solo el admin puede hacer esto. */
+async function hcBackfill(t, ppl){
+  if(!CLOUD.on || !t || !t.id || !authToken()) return 0;
+  const marcados = {};
+  (ppl || []).forEach(r=>{
+    const ts = r && r.data && r.data.tids;
+    if(Array.isArray(ts) && ts.indexOf(t.id) >= 0) marcados[r.name] = 1;
+  });
+  const faltan = {};
+  const add = n => { n = (n||'').trim(); if(n && !marcados[n]) faltan[n] = 1; };
+  (t.results || []).forEach(r=> add(r && r.name));
+  (t.chat    || []).forEach(m=> { if(m && !m.sys) add(m.name); });
+  (state.triviaLog || []).forEach(e=> { if(e && e.tid === t.id) add(e.name); });
+  const nombres = Object.keys(faltan);
+  if(!nombres.length) return 0;
+
+  try{
+    /* traemos su ficha COMPLETA (pocas personas) para no borrarle la foto a nadie */
+    const lista = nombres.map(n=> '"' + String(n).replace(/"/g, '\\"') + '"').join(',');
+    const r = await cfetch('players?select=name,data&name=in.(' + encodeURIComponent(lista) + ')');
+    const actuales = (r && r.ok) ? await r.json().catch(()=> []) : [];
+    const byName = {};
+    (Array.isArray(actuales) ? actuales : []).forEach(x=> { if(x && x.name) byName[x.name] = x.data || {}; });
+
+    const filas = nombres.map(n=>{
+      const d = Object.assign({}, byName[n] || {});
+      const ts = Array.isArray(d.tids) ? d.tids.slice() : [];
+      if(ts.indexOf(t.id) < 0) ts.push(t.id);
+      d.tids = ts;
+      return { name:n, data:d };
+    });
+    const up = await cfetch('players?on_conflict=name', {
+      method:'POST',
+      headers:{ 'Prefer':'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(filas)
+    });
+    return (up && up.ok) ? filas.length : 0;
+  }catch(e){ return 0; }
+}
 async function hcPanel(tid, force){
   const t = (state.tournaments||[]).find(x=> x.id === tid); if(!t) return;
   modal(`<div style="padding:6px 2px"><div style="text-align:center; padding:34px; color:var(--ink3); font-weight:800">Loading…</div></div>`);
-  const [ppl] = await Promise.all([ rosterPull(force), pullEmails() ]);
+  let ppl = await rosterPull(force);
+  const puestos = await hcBackfill(t, ppl);
+  if(puestos) ppl = await rosterPull(true);          /* volvemos a leer ya con las marcas nuevas */
+  await pullEmails();
   const rows = hcRows(t, ppl);
-  HEADCOUNT.n[tid] = Math.max(HEADCOUNT.n[tid] || 0, rows.length);
-  HEADCOUNT.at[tid] = Date.now();
+  HEADCOUNT.n[tid] = rows.length; HEADCOUNT.at[tid] = Date.now();
   const stamp = new Date().toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
   modal(`<div style="padding:6px 2px">${hcPanelHTML(t, rows, stamp)}</div>`);
   try{ hqHeads(tid); }catch(e){}
@@ -6639,15 +6665,14 @@ async function hqHeads(tid, force){
   const t = (state.tournaments||[]).find(x=> x.id === tid);
   const local  = enrolledCount(t);
   const played = playedCount(t);
-  /* el número y ya: gente que entró con su correo Y con el código de ESTE torneo */
+  /* el número y ya: gente que entró con la clave de ESTE torneo */
   const paint = (inTour)=>{
     const el2 = document.getElementById('hq-heads'); if(!el2) return;
-    const v = Math.max(inTour || 0, local);
+    const v = (inTour != null) ? inTour : Math.max(local, 0);
     el2.textContent = '👥 ' + v;
-    el2.title = v + ' in this tournament · ' + played + ' have played. Click to refresh.';
+    el2.title = 'Joined with the code. Click to see who.';
   };
   paint(HEADCOUNT.n[tid]);
-  if(force) el.textContent = '👥 …';
   paint(await tourHeadcount(tid, force));
 }
 function copyCode(c){
