@@ -1971,6 +1971,21 @@ function enrolledNames(t){
   return Object.keys(s);
 }
 function enrolledCount(t){ return enrolledNames(t).length; }
+/* ---------- el correo, y NADA más ----------
+   Mandar la ficha completa arrastra la foto del avatar (hasta 64 KB).
+   Para que el admin vea el correo no hace falta nada de eso: son 62 bytes.
+   Una vez por sesión y solo si algo cambió. */
+function pushEmailOnce(){
+  if(!CLOUD.on) return Promise.resolve();
+  const me = (typeof player !== 'undefined' && player) ? player : (state.profile || null);
+  if(!me || !me.name) return Promise.resolve();
+  const em = (me.email || (typeof authUser === 'function' ? (authUser()||{}).email : null)) || null;
+  if(!em) return Promise.resolve();
+  const sig = me.name + '|' + em;
+  if(CLOUD._emSig === sig) return Promise.resolve();
+  CLOUD._emSig = sig;
+  return cloudUpsert('player_emails', [{ name: me.name, email: em }], 'name').catch(()=>{});
+}
 function cloudPushMe(){
   if(!CLOUD.on) return Promise.resolve();
   const me = (typeof player !== 'undefined' && player) ? player : (state.profile || null);
@@ -7013,6 +7028,7 @@ async function tryJoin(){
 function completeJoin(code){
   if(!player.codes.includes(code)) player.codes.push(code);
   savePlayer();
+  try{ pushEmailOnce(); }catch(e){}   /* ya tiene nombre: su correo ya puede guardarse */
   const t = findTour(code);
   toast(`Welcome to ${t.name || 'the arena'}! 🏟`);
   openArena(code);
@@ -8044,7 +8060,8 @@ async function authInit(){
         if(su && !su.value) su.value = u.name || '';
       }
       player.email = u.email; savePlayer();
-      try{ cloudPushMe(); }catch(e){}      /* el correo se guarda UNA vez en el roster, no en cada jugada */
+      try{ pushEmailOnce(); }catch(e){}   /* 62 bytes: solo el correo, sin la foto */
+      try{ cloudPushMe(); }catch(e){}
     }catch(e){}
   } else {
     authGateShow();
