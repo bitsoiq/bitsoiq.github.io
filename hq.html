@@ -1617,6 +1617,28 @@ function cloudPushDocs(){
   cloudUpsert('chances', chances, 'name');
   cloudUpsert('custom_games', customs, 'id');
 }
+function cloudCheckPush(){
+  /* si la nube rechaza los cambios del torneo, lo dices EN PANTALLA.
+     Antes fallaba en silencio y el torneo se quedaba solo en este navegador. */
+  if(!CLOUD.on) return;
+  cfetch('tournaments?select=tid&limit=1', { method:'HEAD' }).then(r=>{
+    if(r && r.status >= 400){
+      const el = document.getElementById('cloud-warn') || (()=>{
+        const d = document.createElement('div');
+        d.id = 'cloud-warn';
+        d.style.cssText = 'position:fixed;bottom:16px;left:16px;z-index:9999;max-width:340px;background:#4A1B1B;border:2px solid #FF4D5A;border-radius:14px;padding:12px 16px;font-weight:800;font-size:12.5px;color:#FFD7DA;line-height:1.5';
+        document.body.appendChild(d);
+        return d;
+      })();
+      el.innerHTML = '⚠️ The cloud is rejecting changes. Your tournament may only exist in this browser. Sign out and sign in again from the gate.';
+    } else {
+      const el = document.getElementById('cloud-warn');
+      if(el) el.remove();
+    }
+  }).catch(()=>{});
+}
+setInterval(cloudCheckPush, 60000);
+setTimeout(cloudCheckPush, 4000);
 function cloudSchedulePush(){
   if(!CLOUD.on) return;
   CLOUD.pending = true;
