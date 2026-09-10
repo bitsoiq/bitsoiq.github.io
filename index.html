@@ -797,6 +797,15 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 @keyframes gifCharge{0%,100%{transform:translateX(-8px) rotate(-4deg)}30%{transform:translateX(2px)}50%{transform:translateX(12px) rotate(6deg) scale(1.08)}70%{transform:translateX(2px)}}
 @keyframes gifDisco{0%{filter:hue-rotate(0) drop-shadow(0 0 6px rgba(225,254,56,.6)); transform:rotate(-6deg)}50%{transform:rotate(6deg)}100%{filter:hue-rotate(360deg) drop-shadow(0 0 6px rgba(225,254,56,.6)); transform:rotate(-6deg)}}
 .feed-in{display:flex; gap:10px; margin-top:12px; align-items:center}
+/* la caja de escribir, el GIF y el Send no se van con el scroll */
+#ar-right .rwrap .feed-in{
+  position:sticky; bottom:0; z-index:13;
+  padding:10px 0 2px;
+  background:var(--card);
+  box-shadow:0 0 0 8px var(--card), 0 -10px 18px -8px rgba(0,0,0,.55);
+}
+#ar-right .rwrap #gif-picker{ position:sticky; bottom:64px; z-index:13; background:var(--card) }
+
 .feed-in input{flex:1; border:2px solid var(--line); border-radius:12px; padding:11px 14px; font-weight:700; font-size:14px; outline:none; background:var(--bg2); color:var(--ink)}
 .feed-in input:focus{border-color:var(--neon)}
 .gifbtn{font-weight:900; font-size:12px; letter-spacing:1px; padding:0 14px; height:44px; border-radius:12px; background:var(--card2); border:2px solid var(--line); color:var(--ink2); flex:none}
@@ -1235,26 +1244,32 @@ function splitLeft(ms){
     total: s
   };
 }
+function soonHead(t, ts, L){
+  /* La gente cuenta "faltan 4 días" (jueves→lunes) y el reloj cuenta 3d 13h.
+     Los dos tienen razón, así que el título dice el DÍA y los cuadritos
+     dicen el tiempo exacto. Nadie se confunde. */
+  if(ts == null) return 'The arena opens soon';
+  if(L.total <= 0) return 'The arena is open';
+  try{
+    const hoy = tKey(t);
+    const d0  = ((t && t.days) || [{}])[0].date || '';
+    const dif = Math.round((new Date(d0 + 'T12:00:00Z') - new Date(hoy + 'T12:00:00Z')) / 86400000);
+    if(dif <= 0) return 'The arena opens today';
+    if(dif === 1) return 'The arena opens tomorrow';
+    const wd = new Date(d0 + 'T12:00:00Z').toLocaleDateString('en-US', { weekday:'long', timeZone:'UTC' });
+    return dif <= 6 ? ('The arena opens ' + wd) : ('The arena opens in ' + dif + ' days');
+  }catch(e){ return 'The arena opens soon'; }
+}
 function tickSoon(){
-  const el = document.getElementById('soon-cd'); if(!el) return;
+  const el = document.getElementById('soon-s'); if(!el) return;
   const t = (typeof curT === 'function') ? curT() : null;
   const ts = tourStartMs(t); if(ts == null) return;
   const L = splitLeft(ts - Date.now());
   const p2 = n => String(n).padStart(2, '0');
-  el.textContent = p2(L.h) + ':' + p2(L.m) + ':' + p2(L.s);
-  const dEl = document.getElementById('soon-days');
-  if(dEl){
-    dEl.textContent = L.d;
-    const lbl = document.getElementById('soon-days-l');
-    if(lbl) lbl.textContent = L.d === 1 ? 'day to go' : 'days to go';
-  }
+  const put = (id, v)=>{ const e = document.getElementById(id); if(e) e.textContent = v; };
+  put('soon-d', L.d); put('soon-h', p2(L.h)); put('soon-m', p2(L.m)); put('soon-s', p2(L.s));
   const hEl = document.getElementById('soon-head');
-  if(hEl){
-    hEl.textContent = L.total <= 0        ? 'The arena is open'
-                    : L.d === 0           ? 'The arena opens today'
-                    : L.d === 1           ? 'The arena opens tomorrow'
-                    :                       'The arena opens in ' + L.d + ' days';
-  }
+  if(hEl) hEl.textContent = soonHead(t, ts, L);
 }
 function tKey(t){
   const p = tzParts(Date.now() - tourStartHour(t)*3600e3);
@@ -1921,6 +1936,29 @@ function playedCount(t){
     return Object.keys(s).length;
   }catch(e){ return 0; }
 }
+
+function enrolledNames(t){
+  /* Quién está DENTRO del torneo, no quién está conectado ahorita.
+     Juntamos todas las señales de que alguien entró con el código:
+     jugó, escribió en el chat, o contestó una trivia. Así también
+     cuentan los que entraron antes de que existiera el marcador nuevo. */
+  const s = {};
+  const add = n => { n = (n || '').trim(); if(n) s[n] = 1; };
+  try{
+    (t && t.results || []).forEach(r=> add(r && r.name));
+    (t && t.chat    || []).forEach(m=> { if(m && !m.sys) add(m.name); });
+    if(t && t.id && typeof state !== 'undefined'){
+      (state.triviaLog || []).forEach(e=> { if(e && e.tid === t.id) add(e.name); });
+      const ros = state.roster || {};
+      Object.keys(ros).forEach(n=>{
+        const tids = ros[n] && ros[n].tids;
+        if(Array.isArray(tids) && tids.indexOf(t.id) >= 0) add(n);
+      });
+    }
+  }catch(e){}
+  return Object.keys(s);
+}
+function enrolledCount(t){ return enrolledNames(t).length; }
 function cloudPushMe(){
   if(!CLOUD.on) return Promise.resolve();
   const me = (typeof player !== 'undefined' && player) ? player : (state.profile || null);
@@ -7280,19 +7318,17 @@ function renderTodayCard(t){
     const _ts = tourStartMs(t);
     const _L  = splitLeft(_ts == null ? 0 : (_ts - Date.now()));
     const _p2 = n => String(n).padStart(2, '0');
-    const _hd = _ts == null       ? 'The arena opens soon'
-              : _L.d === 0        ? 'The arena opens today'
-              : _L.d === 1        ? 'The arena opens tomorrow'
-              :                     'The arena opens in ' + _L.d + ' days';
+    const _hd = soonHead(t, _ts, _L);
     box.innerHTML = `<div class="soonbox"><div class="in">
       <div class="glow"></div>
       <div class="soonemo">🎮</div>
       <div class="soonh" id="soon-head">${_hd}</div>
       <p class="soonp">First game drops <b>${fmtDay(_d0)} at ${fmtHour(tourStartHour(t))}</b> (Mexico City). One minute a day, ${_gd} days, one winner.</p>
       <div class="soonrow">
-        <div class="soonchip"><b id="soon-days">${_L.d}</b><span id="soon-days-l">${_L.d === 1 ? 'day to go' : 'days to go'}</span></div>
-        <div class="soonchip"><b id="soon-cd">${_p2(_L.h)}:${_p2(_L.m)}:${_p2(_L.s)}</b><span>hours &amp; counting</span></div>
-        <div class="soonchip"><b>${_gd}</b><span>game days</span></div>
+        <div class="soonchip"><b id="soon-d">${_L.d}</b><span>${_L.d === 1 ? 'day' : 'days'}</span></div>
+        <div class="soonchip"><b id="soon-h">${_p2(_L.h)}</b><span>${_L.h === 1 ? 'hour' : 'hours'}</span></div>
+        <div class="soonchip"><b id="soon-m">${_p2(_L.m)}</b><span>${_L.m === 1 ? 'minute' : 'minutes'}</span></div>
+        <div class="soonchip"><b id="soon-s">${_p2(_L.s)}</b><span>seconds</span></div>
       </div>
       <div class="soonfoot"><span class="soondot"></span> You're in. Say gm in the chat and meet the competition.</div>
     </div></div>`;
@@ -7673,13 +7709,13 @@ setInterval(tickSoon, 1000);
 /* ---------- cuánta gente hay en la arena, junto al reloj ---------- */
 function paintHeads(n, t){
   const el = $('#ar-heads'); if(!el) return;
-  const played = playedCount(t);
-  const v = Math.max(n || 0, played);
+  const v = Math.max(n || 0, enrolledCount(t));
   if(!v){ el.style.display = 'none'; return; }
   el.style.display = '';
   el.textContent = '👥 ' + v;
-  el.title = v === 1 ? '1 player has joined this arena'
-                     : v + ' players have joined this arena';
+  el.title = (v === 1 ? '1 player is in this tournament'
+                      : v + ' players are in this tournament') +
+             ' — everyone who joined with the code, not who is online right now.';
 }
 async function refreshHeads(force){
   const t = (typeof curT === 'function') ? curT() : null;

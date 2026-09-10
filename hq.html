@@ -1760,6 +1760,29 @@ function playedCount(t){
     return Object.keys(s).length;
   }catch(e){ return 0; }
 }
+
+function enrolledNames(t){
+  /* Quién está DENTRO del torneo, no quién está conectado ahorita.
+     Juntamos todas las señales de que alguien entró con el código:
+     jugó, escribió en el chat, o contestó una trivia. Así también
+     cuentan los que entraron antes de que existiera el marcador nuevo. */
+  const s = {};
+  const add = n => { n = (n || '').trim(); if(n) s[n] = 1; };
+  try{
+    (t && t.results || []).forEach(r=> add(r && r.name));
+    (t && t.chat    || []).forEach(m=> { if(m && !m.sys) add(m.name); });
+    if(t && t.id && typeof state !== 'undefined'){
+      (state.triviaLog || []).forEach(e=> { if(e && e.tid === t.id) add(e.name); });
+      const ros = state.roster || {};
+      Object.keys(ros).forEach(n=>{
+        const tids = ros[n] && ros[n].tids;
+        if(Array.isArray(tids) && tids.indexOf(t.id) >= 0) add(n);
+      });
+    }
+  }catch(e){}
+  return Object.keys(s);
+}
+function enrolledCount(t){ return enrolledNames(t).length; }
 function cloudPushMe(){
   if(!CLOUD.on) return Promise.resolve();
   const me = (typeof player !== 'undefined' && player) ? player : (state.profile || null);
@@ -6528,21 +6551,18 @@ async function hqHeads(tid, force){
   const el = document.getElementById('hq-heads');
   if(!el || !tid) return;
   const t = (state.tournaments||[]).find(x=> x.id === tid);
+  const local  = enrolledCount(t);
   const played = playedCount(t);
   const paint = (n)=>{
     const el2 = document.getElementById('hq-heads'); if(!el2) return;
-    const v = Math.max(n || 0, played);
+    const v = Math.max(n || 0, local);
     el2.textContent = '👥 ' + v + (v === 1 ? ' player' : ' players');
-    el2.title = v + ' joined with this code · ' + played + ' have played at least once. Click to refresh.';
+    el2.title = v + ' in this tournament · ' + played + ' have played at least once.' +
+                '\nCounts everyone who joined with the code, not who is online. Click to refresh.';
   };
-  if(HEADCOUNT.n[tid] != null) paint(HEADCOUNT.n[tid]);
+  paint(HEADCOUNT.n[tid]);
   if(force) el.textContent = '👥 …';
   const n = await tourHeadcount(tid, force);
-  if(n == null && HEADCOUNT.n[tid] == null){
-    const el2 = document.getElementById('hq-heads');
-    if(el2){ el2.textContent = '👥 ' + played + (played === 1 ? ' player' : ' players'); el2.title = 'Players who have played at least once. Click to refresh.'; }
-    return;
-  }
   paint(n);
 }
 function copyCode(c){
