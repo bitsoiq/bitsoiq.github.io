@@ -6726,17 +6726,31 @@ async function fetchTourByCode(code){
      Antes, si el sincronizador estaba ocupado en ese instante, se saltaba
      la búsqueda y le decíamos al jugador "código equivocado" sin siquiera buscar. */
   if(!CLOUD.on || !code) return null;
-  const grab = async (path)=>{
-    try{
-      const r = await cfetch(path);
-      if(!r.ok) return [];
-      const j = await r.json();
-      return Array.isArray(j) ? j : [];
-    }catch(e){ return []; }
+  const sleep = ms => new Promise(r=> setTimeout(r, ms));
+  /* la nube a veces devuelve 500 cuando entra mucha gente a la vez.
+     No es motivo para decirle a nadie "codigo equivocado": reintentamos. */
+  const grab = async (path, tries)=>{
+    const n = tries || 3;
+    for(let i = 0; i < n; i++){
+      try{
+        const r = await cfetch(path);
+        if(r.ok){
+          const j = await r.json();
+          return Array.isArray(j) ? j : [];
+        }
+        if(r.status >= 500 || r.status === 429){ await sleep(500 * (i + 1)); continue; }
+        return [];                               /* 400/404: la consulta no sirve, no insistas */
+      }catch(e){ await sleep(500 * (i + 1)); }
+    }
+    return [];
   };
-  let rows = await grab('tournaments?select=*&code=eq.' + encodeURIComponent(code));
-  if(!rows.length) rows = (await grab('tournaments?select=*'))
-      .filter(r=> ((r.data && r.data.code) || r.code || '').toUpperCase() === code);
+  const match = r => (((r.data && r.data.code) || r.code || '') + '').toUpperCase() === code;
+  /* 1) el camino barato: filtrar por el codigo que vive DENTRO del torneo */
+  let rows = (await grab('tournaments?select=*&data->>code=eq.' + encodeURIComponent(code), 2)).filter(match);
+  /* 2) por si el codigo vive en su propia columna */
+  if(!rows.length) rows = (await grab('tournaments?select=*&code=eq.' + encodeURIComponent(code), 2)).filter(match);
+  /* 3) red de seguridad: traer todo y buscar a mano */
+  if(!rows.length) rows = (await grab('tournaments?select=*')).filter(match);
   if(!rows.length) return null;
   const t = rows[0].data || rows[0];
   if(!t || !t.id) return null;
@@ -6758,9 +6772,12 @@ async function tryJoin(){
   if(!t && CLOUD.on){
     err.style.color = 'var(--ink3)';
     err.textContent = 'Looking for that arena…';
-    await cloudPull();
-    t = findTour(code);
-    if(!t) t = await fetchTourByCode(code);   /* búsqueda directa: nunca falla por sincronización */
+    /* PRIMERO la busqueda directa: es una sola peticion chica y con reintentos.
+       cloudPull baja medio mundo (jugadores, chat, trivia) y con 600 personas
+       tarda una eternidad; solo lo usamos si la directa no encontro nada. */
+    t = await fetchTourByCode(code);
+    if(!t){ await cloudPull(); t = findTour(code); }
+    if(!t){ err.textContent = 'Still looking…'; await new Promise(r=> setTimeout(r, 1500)); t = await fetchTourByCode(code); }
     err.style.color = '';
   }
   if(!t){
