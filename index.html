@@ -6650,6 +6650,33 @@ function curT(){ return curCode ? findTour(curCode) : null; }
 function goHome(){ curCode = null; cuDate = null; renderHome(); show('scr-home'); }
 
 /* ---------- join flow ---------- */
+async function fetchTourByCode(code){
+  /* Busca el torneo DIRECTO en la nube, sin pasar por el sincronizador.
+     Antes, si el sincronizador estaba ocupado en ese instante, se saltaba
+     la búsqueda y le decíamos al jugador "código equivocado" sin siquiera buscar. */
+  if(!CLOUD.on || !code) return null;
+  const grab = async (path)=>{
+    try{
+      const r = await cfetch(path);
+      if(!r.ok) return [];
+      const j = await r.json();
+      return Array.isArray(j) ? j : [];
+    }catch(e){ return []; }
+  };
+  let rows = await grab('tournaments?select=*&code=eq.' + encodeURIComponent(code));
+  if(!rows.length) rows = (await grab('tournaments?select=*'))
+      .filter(r=> ((r.data && r.data.code) || r.code || '').toUpperCase() === code);
+  if(!rows.length) return null;
+  const t = rows[0].data || rows[0];
+  if(!t || !t.id) return null;
+  state.tournaments = state.tournaments || [];
+  const i = state.tournaments.findIndex(x=> x.id === t.id);
+  t.results = (i >= 0 && state.tournaments[i].results) || [];
+  t.chat    = (i >= 0 && state.tournaments[i].chat)    || [];
+  if(i >= 0) state.tournaments[i] = t; else state.tournaments.push(t);
+  saveState();
+  return t;
+}
 async function tryJoin(){
   const inp = $('#join-code');
   const code = (inp.value||'').trim().toUpperCase();
@@ -6658,9 +6685,12 @@ async function tryJoin(){
   syncShared();
   let t = findTour(code);
   if(!t && CLOUD.on){
+    err.style.color = 'var(--ink3)';
     err.textContent = 'Looking for that arena…';
     await cloudPull();
     t = findTour(code);
+    if(!t) t = await fetchTourByCode(code);   /* búsqueda directa: nunca falla por sincronización */
+    err.style.color = '';
   }
   if(!t){
     /* distinguimos "código equivocado" de "la nube no me deja ver nada" */
@@ -7684,6 +7714,9 @@ async function authInit(){
   }
 }
 try{ rehydrateAll(); }catch(e){}
+/* primera sincronización inmediata: si esperamos al primer tick, alguien que
+   escribe su código en los primeros segundos no encontraría ningún torneo */
+setTimeout(()=>{ try{ cloudPull().then(()=> rerenderCurrent()); }catch(e){} }, 300);
 authInit();
 
 
