@@ -899,6 +899,64 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 }
 @media(max-width:980px){ .arena-grid{grid-template-columns:1fr} }
 
+
+/* ===== TABS CONGELADOS: no se van con el scroll ===== */
+#ar-right .rwrap > .card{overflow:clip}
+#ar-right .rwrap .tabs2{
+  position:sticky; top:0; z-index:14;
+  box-shadow:0 0 0 8px var(--card), 0 10px 18px -6px rgba(0,0,0,.55);
+}
+@media(max-width:980px){
+  #ar-right .rwrap .tabs2{ top:62px; }   /* debajo de la barra de arriba */
+}
+
+/* ===== "NOT OPEN YET": marco de colores en movimiento ===== */
+.soonbox{
+  position:relative; border-radius:26px; padding:4px;
+  background:linear-gradient(115deg,#E1FE38,#3DDC64,#38D0FE,#B478FF,#FF7A45,#FFB938,#E1FE38);
+  background-size:320% 320%;
+  animation:soonflow 7s linear infinite;
+  box-shadow:0 16px 44px rgba(0,0,0,.42);
+}
+@keyframes soonflow{ from{background-position:0% 50%} to{background-position:320% 50%} }
+.soonbox > .in{
+  position:relative; overflow:hidden;
+  background:var(--card); border-radius:22px;
+  padding:56px 30px 46px; text-align:center;
+}
+.soonbox .glow{
+  position:absolute; inset:-60% -20% auto -20%; height:260px; pointer-events:none;
+  background:radial-gradient(ellipse at 50% 100%, rgba(225,254,56,.16), transparent 70%);
+}
+.soonemo{ font-size:74px; display:inline-block; animation:soonbob 2.8s ease-in-out infinite; }
+@keyframes soonbob{ 0%,100%{transform:translateY(0) rotate(-5deg)} 50%{transform:translateY(-15px) rotate(5deg)} }
+.soonh{ font-size:32px; font-weight:900; letter-spacing:-1px; margin:16px 0 6px; line-height:1.1 }
+.soonp{ color:var(--ink2); font-size:15px; font-weight:700; margin:0 auto; max-width:420px }
+.soonp b{ color:var(--neon) }
+.soonrow{ display:flex; gap:12px; justify-content:center; margin-top:26px; flex-wrap:wrap }
+.soonchip{
+  background:var(--bg2); border:2px solid var(--line); border-radius:16px;
+  padding:14px 20px; min-width:96px;
+}
+.soonchip b{ display:block; font-size:27px; font-weight:900; color:var(--neon); line-height:1.15; font-variant-numeric:tabular-nums }
+.soonchip span{ font-size:10.5px; font-weight:900; letter-spacing:1px; text-transform:uppercase; color:var(--ink3) }
+.soonfoot{
+  margin-top:26px; display:inline-flex; align-items:center; gap:9px;
+  background:var(--bg2); border:2px solid var(--line); border-radius:99px;
+  padding:10px 18px; font-size:13px; font-weight:800; color:var(--ink2);
+}
+.soondot{ width:9px; height:9px; border-radius:99px; background:#3DDC64; animation:soonpulse 1.6s ease-in-out infinite }
+@keyframes soonpulse{ 0%,100%{opacity:1; transform:scale(1)} 50%{opacity:.35; transform:scale(.78)} }
+@media(max-width:560px){
+  .soonbox > .in{padding:40px 18px 34px}
+  .soonh{font-size:25px}
+  .soonemo{font-size:58px}
+  .soonchip{padding:12px 14px; min-width:80px}
+  .soonchip b{font-size:22px}
+}
+@media(prefers-reduced-motion:reduce){
+  .soonbox{animation:none} .soonemo{animation:none} .soondot{animation:none}
+}
 .daytag{text-align:center; margin:6px 0 18px}
 .daytag .d1{font-size:13px; font-weight:900; letter-spacing:4px; color:var(--ink3)}
 .daytag .d2{font-size:40px; font-weight:900; letter-spacing:-1.5px; color:#fff; line-height:1.05}
@@ -1066,6 +1124,7 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
       <span class="pill dim" id="ar-code" style="cursor:pointer" title="Click to copy" onclick="copyCode(curT() && curT().code || '')">🔑 —</span>
       <button class="pill dim" style="cursor:pointer" onclick="fbOpen()" title="Tell the admin what to improve">💡 Feedback</button>
       <div class="spacer"></div>
+      <span class="pill dim" id="ar-heads" title="Players who joined this arena" style="display:none">👥 —</span>
       <span class="pill dim cdpill" id="ar-cd" title="Time left in today&#39;s game">⌛ --:--:--</span>
       <div class="musicctl" title="Console music">
         <button onclick="bgmVol(-1)">−</button>
@@ -1140,6 +1199,61 @@ function tzParts(ms){
   }catch(e){
     const d = new Date(ms);
     return { y:String(d.getFullYear()), mo:String(d.getMonth()+1).padStart(2,'0'), d:String(d.getDate()).padStart(2,'0'), h:d.getHours(), mi:d.getMinutes(), s:d.getSeconds() };
+  }
+}
+/* ---------- cuánto falta EXACTAMENTE para que arranque el torneo ----------
+   No es "cuánto falta para las 6am de mañana": es cuánto falta para las 6am
+   del primer día de juego, contando los días de por medio. Todo en hora de
+   México, sin importar dónde esté el jugador. */
+function tzOffsetMs(ms){
+  const p = tzParts(ms);
+  const asIfUTC = Date.UTC(+p.y, +p.mo - 1, +p.d, p.h, p.mi, p.s);
+  return asIfUTC - Math.floor(ms / 1000) * 1000;
+}
+function tourStartMs(t){
+  try{
+    const days = (t && t.days) || [];
+    if(!days.length) return null;
+    const d0 = days[0].date;                        /* 'YYYY-MM-DD' */
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d0);
+    if(!m) return null;
+    const h = tourStartHour(t);
+    const guess = Date.UTC(+m[1], +m[2] - 1, +m[3], h, 0, 0);
+    /* corregimos con el desfase real de México en esa fecha */
+    let ts = guess - tzOffsetMs(guess);
+    ts = guess - tzOffsetMs(ts);                    /* segunda pasada: exacto aunque cambie el horario */
+    return ts;
+  }catch(e){ return null; }
+}
+function splitLeft(ms){
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return {
+    d: Math.floor(s / 86400),
+    h: Math.floor((s % 86400) / 3600),
+    m: Math.floor((s % 3600) / 60),
+    s: s % 60,
+    total: s
+  };
+}
+function tickSoon(){
+  const el = document.getElementById('soon-cd'); if(!el) return;
+  const t = (typeof curT === 'function') ? curT() : null;
+  const ts = tourStartMs(t); if(ts == null) return;
+  const L = splitLeft(ts - Date.now());
+  const p2 = n => String(n).padStart(2, '0');
+  el.textContent = p2(L.h) + ':' + p2(L.m) + ':' + p2(L.s);
+  const dEl = document.getElementById('soon-days');
+  if(dEl){
+    dEl.textContent = L.d;
+    const lbl = document.getElementById('soon-days-l');
+    if(lbl) lbl.textContent = L.d === 1 ? 'day to go' : 'days to go';
+  }
+  const hEl = document.getElementById('soon-head');
+  if(hEl){
+    hEl.textContent = L.total <= 0        ? 'The arena is open'
+                    : L.d === 0           ? 'The arena opens today'
+                    : L.d === 1           ? 'The arena opens tomorrow'
+                    :                       'The arena opens in ' + L.d + ' days';
   }
 }
 function tKey(t){
@@ -1763,18 +1877,63 @@ async function nameTaken(name){
     return owner !== mine;
   }catch(e){ return false; }
 }
+/* ============================================================
+   CUÁNTA GENTE HAY EN EL TORNEO
+   Al entrar con el código, el jugador queda marcado en su propia
+   ficha del roster. Contar es una sola petición chica: le pedimos
+   a la base el total, no las filas. Con 600 personas pesa igual
+   que con 6.
+   ============================================================ */
+function myTids(){
+  try{
+    const me = (typeof player !== 'undefined' && player) ? player : (state.profile || {});
+    const codes = (me.codes || []).map(c=> (c||'').toUpperCase());
+    if(!codes.length) return [];
+    return (state.tournaments || [])
+      .filter(t=> t && t.id && codes.indexOf(((t.code)||'').toUpperCase()) >= 0)
+      .map(t=> t.id)
+      .sort();
+  }catch(e){ return []; }
+}
+const HEADCOUNT = { n:{}, at:{} };
+async function tourHeadcount(tid, force){
+  /* devuelve cuánta gente entró con el código, o null si la nube no contesta */
+  if(!CLOUD.on || !tid) return null;
+  const fresh = HEADCOUNT.at[tid] && (Date.now() - HEADCOUNT.at[tid] < 60000);
+  if(fresh && !force) return HEADCOUNT.n[tid];
+  try{
+    const q = 'players?select=name&limit=1&data=cs.' +
+              encodeURIComponent(JSON.stringify({ tids:[tid] }));
+    const r = await cfetch(q, { headers:{ 'Prefer':'count=exact' } });
+    if(!r || !r.ok) return HEADCOUNT.n[tid] != null ? HEADCOUNT.n[tid] : null;
+    const cr = (r.headers && r.headers.get('content-range')) || '';
+    const n = parseInt((cr.split('/')[1] || ''), 10);
+    if(!isFinite(n)) return HEADCOUNT.n[tid] != null ? HEADCOUNT.n[tid] : null;
+    HEADCOUNT.n[tid] = n; HEADCOUNT.at[tid] = Date.now();
+    return n;
+  }catch(e){ return HEADCOUNT.n[tid] != null ? HEADCOUNT.n[tid] : null; }
+}
+function playedCount(t){
+  /* respaldo: gente que ya jugó al menos una vez (siempre es <= la que entró) */
+  try{
+    const s = {};
+    (t && t.results || []).forEach(r=>{ if(r && r.name) s[r.name] = 1; });
+    return Object.keys(s).length;
+  }catch(e){ return 0; }
+}
 function cloudPushMe(){
   if(!CLOUD.on) return Promise.resolve();
   const me = (typeof player !== 'undefined' && player) ? player : (state.profile || null);
   if(!me || !me.name) return Promise.resolve();
   const em = (me.email || (typeof authUser === 'function' ? (authUser()||{}).email : null)) || null;
-  const sig = me.name + '|' + (me.avatar||'') + '|' + (em||'');
+  const tids = (typeof myTids === 'function') ? myTids() : [];
+  const sig = me.name + '|' + (me.avatar||'') + '|' + (em||'') + '|' + tids.join(',');
   if(CLOUD._meSig === sig) return CLOUD._meP || Promise.resolve();
   CLOUD._meSig = sig;
   /* la foto va al roster público (todos la ven); el correo va a una tabla aparte que solo el admin puede leer */
   if(em) cloudUpsert('player_emails', [{ name: me.name, email: em }], 'name').catch(()=>{});
   CLOUD._meP = ownerId().then(oid=>
-    cloudUpsert('players', [{ name: me.name, data: { avatar: me.avatar, oid: oid, ts: Date.now() } }], 'name'))
+    cloudUpsert('players', [{ name: me.name, data: { avatar: me.avatar, oid: oid, tids: tids, ts: Date.now() } }], 'name'))
     .then(r=>{
       if(r && r.ok === false){ CLOUD.roster = false; CLOUD._meSig = null; }   /* tabla ausente o sin permiso → modo compatible */
       else CLOUD.roster = true;
@@ -7038,6 +7197,9 @@ function openArena(code){
   paintChips();
   renderArena();
   show('scr-arena');
+  /* deja constancia de que entré a este torneo, y pinta el conteo */
+  try{ cloudPushMe(); }catch(e){}
+  try{ refreshHeads(true); }catch(e){}
 }
 function askAllin(){
   const t = curT(); if(!t) return;
@@ -7113,9 +7275,27 @@ function renderTodayCard(t){
   const idx = days.findIndex(d=> d.date===tKey(t));
   /* not started yet */
   if(days.length && tKey(t) < days[0].date){
-    box.innerHTML = `<div class="card" style="text-align:center; padding:52px 30px">
-      <div style="font-size:52px">🔜</div><h2 style="margin-top:10px">Not open yet</h2>
-      <p class="sub" style="margin-top:8px">First game drops <b>${fmtDay(days[0].date)}</b>. Warm your fingers up.</p></div>`;
+    const _d0 = days[0].date;
+    const _gd = days.filter(d=> d.gameId).length || days.length;
+    const _ts = tourStartMs(t);
+    const _L  = splitLeft(_ts == null ? 0 : (_ts - Date.now()));
+    const _p2 = n => String(n).padStart(2, '0');
+    const _hd = _ts == null       ? 'The arena opens soon'
+              : _L.d === 0        ? 'The arena opens today'
+              : _L.d === 1        ? 'The arena opens tomorrow'
+              :                     'The arena opens in ' + _L.d + ' days';
+    box.innerHTML = `<div class="soonbox"><div class="in">
+      <div class="glow"></div>
+      <div class="soonemo">🎮</div>
+      <div class="soonh" id="soon-head">${_hd}</div>
+      <p class="soonp">First game drops <b>${fmtDay(_d0)} at ${fmtHour(tourStartHour(t))}</b> (Mexico City). One minute a day, ${_gd} days, one winner.</p>
+      <div class="soonrow">
+        <div class="soonchip"><b id="soon-days">${_L.d}</b><span id="soon-days-l">${_L.d === 1 ? 'day to go' : 'days to go'}</span></div>
+        <div class="soonchip"><b id="soon-cd">${_p2(_L.h)}:${_p2(_L.m)}:${_p2(_L.s)}</b><span>hours &amp; counting</span></div>
+        <div class="soonchip"><b>${_gd}</b><span>game days</span></div>
+      </div>
+      <div class="soonfoot"><span class="soondot"></span> You're in. Say gm in the chat and meet the competition.</div>
+    </div></div>`;
     return;
   }
   /* finished */
@@ -7488,6 +7668,29 @@ function tickCountdown(){
   $$('.cdv').forEach(e=> e.textContent = txt);
 }
 setInterval(tickCountdown, 1000);
+setInterval(tickSoon, 1000);
+
+/* ---------- cuánta gente hay en la arena, junto al reloj ---------- */
+function paintHeads(n, t){
+  const el = $('#ar-heads'); if(!el) return;
+  const played = playedCount(t);
+  const v = Math.max(n || 0, played);
+  if(!v){ el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.textContent = '👥 ' + v;
+  el.title = v === 1 ? '1 player has joined this arena'
+                     : v + ' players have joined this arena';
+}
+async function refreshHeads(force){
+  const t = (typeof curT === 'function') ? curT() : null;
+  const el = $('#ar-heads');
+  if(!t || !t.id){ if(el) el.style.display = 'none'; return; }
+  paintHeads(HEADCOUNT.n[t.id], t);            /* pinta lo que ya sabíamos, sin esperar */
+  const n = await tourHeadcount(t.id, force);
+  const now = (typeof curT === 'function') ? curT() : null;
+  if(now && now.id === t.id) paintHeads(n, now);
+}
+setInterval(()=>{ if(!document.hidden) refreshHeads(); }, 45000);
 
 /* ---------- engine overrides: player-flavored game flow ---------- */
 function launchGame(g){ startPlay('real'); }

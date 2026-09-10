@@ -1729,6 +1729,37 @@ function slimRow(o){
   if(CLOUD.roster !== false) delete c.avatar;
   return c;
 }
+/* ============================================================
+   CUANTA GENTE HAY EN EL TORNEO
+   Al entrar con el codigo, el jugador queda marcado en su propia
+   ficha del roster. Contar es una sola peticion chica: le pedimos
+   a la base el total, no las filas. Con 600 personas pesa igual
+   que con 6.
+   ============================================================ */
+const HEADCOUNT = { n:{}, at:{} };
+async function tourHeadcount(tid, force){
+  if(!CLOUD.on || !tid) return null;
+  const fresh = HEADCOUNT.at[tid] && (Date.now() - HEADCOUNT.at[tid] < 60000);
+  if(fresh && !force) return HEADCOUNT.n[tid];
+  try{
+    const q = 'players?select=name&limit=1&data=cs.' +
+              encodeURIComponent(JSON.stringify({ tids:[tid] }));
+    const r = await cfetch(q, { headers:{ 'Prefer':'count=exact' } });
+    if(!r || !r.ok) return HEADCOUNT.n[tid] != null ? HEADCOUNT.n[tid] : null;
+    const cr = (r.headers && r.headers.get('content-range')) || '';
+    const n = parseInt((cr.split('/')[1] || ''), 10);
+    if(!isFinite(n)) return HEADCOUNT.n[tid] != null ? HEADCOUNT.n[tid] : null;
+    HEADCOUNT.n[tid] = n; HEADCOUNT.at[tid] = Date.now();
+    return n;
+  }catch(e){ return HEADCOUNT.n[tid] != null ? HEADCOUNT.n[tid] : null; }
+}
+function playedCount(t){
+  try{
+    const s = {};
+    (t && t.results || []).forEach(r=>{ if(r && r.name) s[r.name] = 1; });
+    return Object.keys(s).length;
+  }catch(e){ return 0; }
+}
 function cloudPushMe(){
   if(!CLOUD.on) return Promise.resolve();
   const me = (typeof player !== 'undefined' && player) ? player : (state.profile || null);
@@ -6492,6 +6523,28 @@ function genCode(){
 function codeTaken(c){
   return (state.tournaments||[]).some(t=> t.code===c) || (state.history||[]).some(h=> h.code===c);
 }
+/* ---------- cuánta gente entró con el código ---------- */
+async function hqHeads(tid, force){
+  const el = document.getElementById('hq-heads');
+  if(!el || !tid) return;
+  const t = (state.tournaments||[]).find(x=> x.id === tid);
+  const played = playedCount(t);
+  const paint = (n)=>{
+    const el2 = document.getElementById('hq-heads'); if(!el2) return;
+    const v = Math.max(n || 0, played);
+    el2.textContent = '👥 ' + v + (v === 1 ? ' player' : ' players');
+    el2.title = v + ' joined with this code · ' + played + ' have played at least once. Click to refresh.';
+  };
+  if(HEADCOUNT.n[tid] != null) paint(HEADCOUNT.n[tid]);
+  if(force) el.textContent = '👥 …';
+  const n = await tourHeadcount(tid, force);
+  if(n == null && HEADCOUNT.n[tid] == null){
+    const el2 = document.getElementById('hq-heads');
+    if(el2){ el2.textContent = '👥 ' + played + (played === 1 ? ' player' : ' players'); el2.title = 'Players who have played at least once. Click to refresh.'; }
+    return;
+  }
+  paint(n);
+}
 function copyCode(c){
   const done = ()=> toast(`Code ${c} copied — share it with the team 🔑`);
   if(navigator.clipboard && navigator.clipboard.writeText){
@@ -6848,19 +6901,49 @@ function qBankArr(){
   return state.questions;
 }
 /* where a new tournament's questions come from: the latest live bank, else the last archived one, else the defaults */
+/* ============================================================
+   PESO DE LAS IMÁGENES
+   Todo el torneo (portada + imágenes de cada pregunta) viaja en un
+   solo documento. Si ese documento crece de más, la base tarda tanto
+   en entregarlo que lo cancela y los jugadores ven error 500.
+   Esta función encoge la imagen hasta que quepa en el presupuesto.
+   ============================================================ */
+function fitImage(img, opt){
+  opt = opt || {};
+  const budget = (opt.kb || 180) * 1024;     /* tamaño máximo del texto base64 */
+  const alpha  = !!opt.alpha;                /* PNG solo si de verdad necesita transparencia */
+  let side = opt.max || 720;
+  let out = '';
+  for(let pass = 0; pass < 6; pass++){
+    const sc = Math.min(1, side / Math.max(img.width, img.height));
+    const cv = document.createElement('canvas');
+    cv.width  = Math.max(1, Math.round(img.width  * sc));
+    cv.height = Math.max(1, Math.round(img.height * sc));
+    const cx = cv.getContext('2d');
+    cx.drawImage(img, 0, 0, cv.width, cv.height);
+    out = alpha ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.78);
+    if(out.length <= budget) return out;
+    /* si el PNG no cabe, primero probamos JPEG bajando calidad; luego achicamos */
+    if(alpha && pass === 0){
+      const j = cv.toDataURL('image/jpeg', 0.72);
+      if(j.length <= budget) return j;
+    }
+    side = Math.round(side * 0.75);
+  }
+  return out;
+}
+function tourWeight(t){
+  try{ return JSON.stringify(t || {}).length; }catch(e){ return 0; }
+}
 function tcImgPick(inp){
   const f = inp.files && inp.files[0]; if(!f) return;
   const r = new FileReader();
   r.onload = ()=>{
     const img = new Image();
     img.onload = ()=>{
-      const M = 720, sc = Math.min(1, M / Math.max(img.width, img.height));
-      const cv2 = document.createElement('canvas');
-      cv2.width = Math.round(img.width*sc); cv2.height = Math.round(img.height*sc);
-      cv2.getContext('2d').drawImage(img, 0, 0, cv2.width, cv2.height);
-      tc.img = /png|webp/i.test(f.type||'') ? cv2.toDataURL('image/png') : cv2.toDataURL('image/jpeg', .8);
+      tc.img = fitImage(img, {max:640, kb:150, alpha:/png|webp/i.test(f.type||'')});
       renderTournament();
-      toast('📷 Cover ready');
+      toast('📷 Cover ready (' + Math.round(tc.img.length/1024) + 'KB)');
     };
     img.src = r.result;
   };
@@ -7502,12 +7585,14 @@ function renderTournament(){
       </div>
       <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap">
         <button class="code-pill" onclick="copyCode('${t.code}')" title="Click to copy — this is how people join">🔑 ${t.code} <span class="cp">copy</span></button>
+        <span class="pill" id="hq-heads" title="People who joined with this code" style="cursor:pointer" onclick="hqHeads('${t.id}', true)">👥 …</span>
         <button class="btn sm ${t.closed?'danger':'ghost'}" onclick="toggleTourLock('${t.id}')" title="${t.closed?'New players can no longer join with the code — current players keep playing':'Anyone with the invite code can join — there is no player limit'}">${t.closed?'🔒 Registration closed':'🔓 Open to new players'}</button>
         <button class="btn danger sm" onclick="askDeleteTournament('${t.id}')">🏁 End tournament</button>
       </div>
     </div>
     <div class="ttabs">${TABS.map(([k,l])=>`<button class="${tourTab===k?'active':''}" onclick="pickTourTab('${k}')">${l}${k==='quest'?`<span class="tcount" id="qtab-count">${t.questions.length}</span>`:''}</button>`).join('')}</div>
     <div id="tour-body"></div>`;
+  try{ hqHeads(t.id); }catch(e){}
   const body = $('#tour-body');
   if(tourTab==='today'){
     body.innerHTML = `<div class="tour-grid2">${todayCardHTML(t)}<div>${chatCardHTML(t)}${adminBoostWidget(t)}</div></div>`;
@@ -7851,12 +7936,7 @@ function eqImgPick(inp, k){
   r.onload = ()=>{
     const img = new Image();
     img.onload = ()=>{
-      const M = 900, sc = Math.min(1, M / Math.max(img.width, img.height));
-      const cv = document.createElement('canvas');
-      cv.width = Math.round(img.width*sc); cv.height = Math.round(img.height*sc);
-      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-      const _alpha = /png|webp/i.test(f.type||'');
-      editQImgs[k] = _alpha ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', .78);
+      editQImgs[k] = fitImage(img, {max:720, kb:130, alpha:/png|webp/i.test(f.type||'')});
       const tag = $('#eq-' + k + 'img-tag');
       if(tag) tag.textContent = '✅ new image ready (' + Math.round(editQImgs[k].length/1024) + 'KB)';
     };
@@ -8003,12 +8083,7 @@ function qImgPick(inp, k){
   r.onload = ()=>{
     const img = new Image();
     img.onload = ()=>{
-      const M = 900, sc = Math.min(1, M / Math.max(img.width, img.height));
-      const cv = document.createElement('canvas');
-      cv.width = Math.round(img.width*sc); cv.height = Math.round(img.height*sc);
-      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-      const _alpha = /png|webp/i.test(f.type||'');
-      qImgs[k] = _alpha ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', .78);
+      qImgs[k] = fitImage(img, {max:720, kb:130, alpha:/png|webp/i.test(f.type||'')});
       const tag = $('#qb-' + k + 'img-tag');
       if(tag) tag.textContent = '✅ image ready (' + Math.round(qImgs[k].length/1024) + 'KB)';
     };
