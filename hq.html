@@ -6565,6 +6565,100 @@ async function registeredCount(force){
     return n;
   }catch(e){ return HEADCOUNT.reg != null ? HEADCOUNT.reg : null; }
 }
+/* ---------- desglose en vivo: quién está dentro del torneo ---------- */
+async function rosterPull(force){
+  /* Pedimos SOLO el nombre y la lista de torneos de cada quien.
+     Nunca las fotos: con 600 personas serían megas y volveríamos a
+     tronar la base por tiempo agotado, como pasó el jueves. */
+  if(!CLOUD.on) return [];
+  const norm = rows => (Array.isArray(rows) ? rows : []).map(r=> ({
+    name: r.name,
+    updated_at: r.updated_at,
+    data: { tids: (r.tids !== undefined ? r.tids : (r.data && r.data.tids)) || [] }
+  }));
+  try{
+    const r = await cfetch('players?select=name,updated_at,tids:data->tids&order=updated_at.desc&limit=2000');
+    if(r && r.ok) return norm(await r.json());
+  }catch(e){}
+  /* respaldo si la base no acepta ese formato: pedimos poquitos y sin orden */
+  try{
+    const r2 = await cfetch('players?select=name,data,updated_at&limit=800');
+    if(r2 && r2.ok) return norm(await r2.json());
+  }catch(e){}
+  return [];
+}
+function hcRows(t, ppl){
+  /* una fila por persona, con lo más específico que sepamos de ella */
+  const by = {};
+  const touch = n => { n = (n||'').trim(); if(!n) return null;
+    return (by[n] = by[n] || { name:n, joined:false, talked:false, played:0, best:0, when:0 }); };
+
+  (ppl || []).forEach(r=>{
+    const tids = r && r.data && r.data.tids;
+    if(Array.isArray(tids) && t && tids.indexOf(t.id) >= 0){
+      const o = touch(r.name); if(o){ o.joined = true; o.when = Math.max(o.when, Date.parse(r.updated_at||0) || 0); }
+    }
+  });
+  (t && t.chat || []).forEach(m=>{ if(m && !m.sys){ const o = touch(m.name); if(o){ o.talked = true; o.when = Math.max(o.when, m.ts||0); } } });
+  (t && t.results || []).forEach(r=>{
+    const o = touch(r && r.name);
+    if(o){ o.played++; o.best = Math.max(o.best, +r.pts || 0); o.when = Math.max(o.when, r.ts || 0); }
+  });
+  (state.triviaLog || []).forEach(e=>{ if(e && e.tid === (t&&t.id)){ const o = touch(e.name); if(o) o.when = Math.max(o.when, e.ts||0); } });
+
+  return Object.keys(by).map(k=> by[k]).sort((a,b)=>
+    (b.played - a.played) || (b.when - a.when) || a.name.localeCompare(b.name));
+}
+function hcPanelHTML(t, rows, stamp){
+  const em = state.emails || {};
+  const played = rows.filter(r=> r.played).length;
+  const talked = rows.filter(r=> r.talked && !r.played).length;
+  const quiet  = rows.length - played - talked;
+  const tag = r => r.played ? '<span class="pill green">🎮 played</span>'
+                 : r.talked ? '<span class="pill">💬 said hi</span>'
+                 : '<span class="pill dim">👋 joined</span>';
+  return `
+  <div style="display:flex; align-items:center; gap:12px; margin-bottom:4px">
+    <div style="font-size:34px; font-weight:900; letter-spacing:-1px">${rows.length}</div>
+    <div style="font-weight:900; font-size:16px; line-height:1.25">in ${esc(t.name || 'this tournament')}
+      <div style="font-size:12px; font-weight:700; color:var(--ink3)">joined with their email and the code ${esc(t.code||'')}</div></div>
+    <div style="margin-left:auto"><button class="btn sm ghost" onclick="hcPanel('${t.id}', true)">↻ Refresh</button></div>
+  </div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; margin:14px 0 12px">
+    <span class="pill green">🎮 ${played} played</span>
+    <span class="pill">💬 ${talked} said hi</span>
+    <span class="pill dim">👋 ${quiet} joined only</span>
+  </div>
+  <div id="hc-list" style="max-height:min(52vh, 460px); overflow-y:auto; border:2px solid var(--line); border-radius:14px; background:var(--bg2)">
+    ${rows.length ? rows.map((r,i)=>`
+      <div style="display:flex; align-items:center; gap:12px; padding:11px 14px; ${i?'border-top:1px solid var(--line)':''}">
+        <span style="width:26px; text-align:right; color:var(--ink3); font-weight:900; font-size:12px">${i+1}</span>
+        <span style="width:34px; height:34px; flex:0 0 auto">${avatarHTML(rosterAvatar(r.name))}</span>
+        <span style="min-width:0; flex:1">
+          <b style="display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${esc(r.name)}</b>
+          <span style="font-size:11.5px; color:var(--ink3); font-weight:700">${esc(em[r.name] || '—')}</span>
+        </span>
+        ${r.played ? `<span class="pill dim">${r.played} run${r.played===1?'':'s'}</span>` : ''}
+        ${tag(r)}
+      </div>`).join('')
+      : `<div style="padding:26px; text-align:center; color:var(--ink3); font-weight:700">Nobody yet. The code is ${esc(t.code||'')}.</div>`}
+  </div>
+  <div style="margin-top:10px; font-size:11.5px; color:var(--ink3); font-weight:700">
+    Updated ${stamp}. ${emailsStatus === 'ok' ? '' : 'Emails hidden — sign in with Google in HQ to see them.'}
+  </div>
+  <div style="margin-top:14px; text-align:right"><button class="btn" onclick="closeModal()">Close</button></div>`;
+}
+async function hcPanel(tid, force){
+  const t = (state.tournaments||[]).find(x=> x.id === tid); if(!t) return;
+  modal(`<div style="padding:6px 2px"><div style="text-align:center; padding:34px; color:var(--ink3); font-weight:800">Loading…</div></div>`);
+  const [ppl] = await Promise.all([ rosterPull(force), pullEmails() ]);
+  const rows = hcRows(t, ppl);
+  HEADCOUNT.n[tid] = Math.max(HEADCOUNT.n[tid] || 0, rows.length);
+  HEADCOUNT.at[tid] = Date.now();
+  const stamp = new Date().toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+  modal(`<div style="padding:6px 2px">${hcPanelHTML(t, rows, stamp)}</div>`);
+  try{ hqHeads(tid); }catch(e){}
+}
 async function hqHeads(tid, force){
   const el = document.getElementById('hq-heads');
   if(!el || !tid) return;
@@ -7622,7 +7716,7 @@ function renderTournament(){
       </div>
       <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap">
         <button class="code-pill" onclick="copyCode('${t.code}')" title="Click to copy — this is how people join">🔑 ${t.code} <span class="cp">copy</span></button>
-        <span class="pill" id="hq-heads" title="People who joined with this code" style="cursor:pointer" onclick="hqHeads('${t.id}', true)">👥 …</span>
+        <span class="pill" id="hq-heads" title="Click to see who's in" style="cursor:pointer" onclick="hcPanel('${t.id}', true)">👥 …</span>
         <button class="btn sm ${t.closed?'danger':'ghost'}" onclick="toggleTourLock('${t.id}')" title="${t.closed?'New players can no longer join with the code — current players keep playing':'Anyone with the invite code can join — there is no player limit'}">${t.closed?'🔒 Registration closed':'🔓 Open to new players'}</button>
         <button class="btn danger sm" onclick="askDeleteTournament('${t.id}')">🏁 End tournament</button>
       </div>
