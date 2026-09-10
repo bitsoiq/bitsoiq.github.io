@@ -1752,7 +1752,28 @@ function cloudPushResult(t, rec){
   if(t && rec) Promise.resolve(cloudPushMe()).then(()=>
     cloudUpsert('results', [{tid:t.id, date:rec.date, name:rec.name, data:slimRow(rec)}], 'tid,date,name'));
 }
-function cloudPushChat(t, m){ if(t && m){ cloudPushMe(); cloudUpsert('chat', [{id:m.id, tid:t.id, data:slimRow(m), ts:m.ts}], 'id'); } }
+function cloudPushChat(t, m, tries){
+  /* el chat se manda con reintentos: si la red parpadea, el mensaje no se pierde
+     ni se queda solo en este dispositivo */
+  if(!t || !m) return;
+  if(!tries) cloudPushMe();
+  const n = tries || 0;
+  if(!CLOUD.on) return;
+  cfetch('chat?on_conflict=id', {
+    method:'POST',
+    headers:{ 'Prefer':'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify([{id:m.id, tid:t.id, data:slimRow(m), ts:m.ts}])
+  }).then(r=>{
+    if(r && r.ok) return;
+    if(n < 3) setTimeout(()=> cloudPushChat(t, m, n+1), 1200 * (n+1));
+    else if(!cloudPushChat._warned){
+      cloudPushChat._warned = true;
+      try{ toast('Chat is offline right now — try again in a moment'); }catch(_){}
+    }
+  }).catch(()=>{
+    if(n < 3) setTimeout(()=> cloudPushChat(t, m, n+1), 1200 * (n+1));
+  });
+}
 function cloudPushTrivia(t, e){
   if(!CLOUD.on || !t || !e) return;
   cfetch('trivia_log', { method:'POST', headers:{'Prefer':'return=minimal'},

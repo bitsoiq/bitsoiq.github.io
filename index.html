@@ -1787,7 +1787,28 @@ function cloudPushResult(t, rec){
   if(t && rec) Promise.resolve(cloudPushMe()).then(()=>
     cloudUpsert('results', [{tid:t.id, date:rec.date, name:rec.name, data:slimRow(rec)}], 'tid,date,name'));
 }
-function cloudPushChat(t, m){ if(t && m){ cloudPushMe(); cloudUpsert('chat', [{id:m.id, tid:t.id, data:slimRow(m), ts:m.ts}], 'id'); } }
+function cloudPushChat(t, m, tries){
+  /* el chat se manda con reintentos: si la red parpadea, el mensaje no se pierde
+     ni se queda solo en este dispositivo */
+  if(!t || !m) return;
+  if(!tries) cloudPushMe();
+  const n = tries || 0;
+  if(!CLOUD.on) return;
+  cfetch('chat?on_conflict=id', {
+    method:'POST',
+    headers:{ 'Prefer':'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify([{id:m.id, tid:t.id, data:slimRow(m), ts:m.ts}])
+  }).then(r=>{
+    if(r && r.ok) return;
+    if(n < 3) setTimeout(()=> cloudPushChat(t, m, n+1), 1200 * (n+1));
+    else if(!cloudPushChat._warned){
+      cloudPushChat._warned = true;
+      try{ toast('Chat is offline right now — try again in a moment'); }catch(_){}
+    }
+  }).catch(()=>{
+    if(n < 3) setTimeout(()=> cloudPushChat(t, m, n+1), 1200 * (n+1));
+  });
+}
 function cloudPushTrivia(t, e){
   if(!CLOUD.on || !t || !e) return;
   cfetch('trivia_log', { method:'POST', headers:{'Prefer':'return=minimal'},
@@ -6520,21 +6541,45 @@ function savePlayer(){ try{ localStorage.setItem(P_KEY, JSON.stringify(player));
 
 /* ---------- shared-store writes: merge, never clobber the admin ---------- */
 function saveState(){
-  try{
-    const raw = localStorage.getItem(LS_KEY);
-    if(raw){
-      const disk = JSON.parse(raw);
-      disk.jokes = state.jokes;
-      disk.chances = state.chances;
-      disk.tournaments = state.tournaments;
-      disk.triviaLog = state.triviaLog;
-      disk.streaks = state.streaks;
-      disk.recapSeen = state.recapSeen;
-      localStorage.setItem(LS_KEY, JSON.stringify(disk));
-    } else {
-      localStorage.setItem(LS_KEY, JSON.stringify(state));
+  /* el disco es solo una copia de respaldo: si no cabe, recortamos.
+     Nunca dejamos que un fallo de escritura tumbe lo que ya está en memoria. */
+  const write = (obj)=>{ localStorage.setItem(LS_KEY, JSON.stringify(obj)); return true; };
+  const merged = ()=>{
+    let disk = null;
+    try{ const raw = localStorage.getItem(LS_KEY); if(raw) disk = JSON.parse(raw); }catch(e){ disk = null; }
+    const slim = (typeof slimState === 'function') ? slimState() : state;
+    if(!disk) return slim;
+    disk.jokes       = slim.jokes;
+    disk.chances     = slim.chances;
+    disk.tournaments = slim.tournaments;
+    disk.triviaLog   = slim.triviaLog;
+    disk.streaks     = slim.streaks;
+    disk.recapSeen   = slim.recapSeen;
+    return disk;
+  };
+  let okWrite = false;
+  try{ okWrite = write(merged()); }
+  catch(e){
+    /* cuota llena: intentamos con lo mínimo indispensable antes de rendirnos */
+    try{
+      const slim = (typeof slimState === 'function') ? slimState() : state;
+      okWrite = write(Object.assign({}, slim, {triviaLog:[]}));
+    }catch(e2){
+      try{
+        const slim = (typeof slimState === 'function') ? slimState() : state;
+        const tiny = Object.assign({}, slim, {triviaLog:[], recapSeen:{}});
+        tiny.tournaments = (slim.tournaments||[]).map(t=> Object.assign({}, t, {
+          results:(t.results||[]).slice(-120), chat:(t.chat||[]).slice(-40)
+        }));
+        okWrite = write(tiny);
+      }catch(e3){
+        if(!saveState._warned){ saveState._warned = true;
+          try{ toast('Storage full — your progress lives in the cloud ☁️'); }catch(_){}
+        }
+      }
     }
-  }catch(e){}
+  }
+  saveState._diskOk = okWrite;
   if(!saveState._quiet) cloudSchedulePush();
 }
 /* fresh read → the arena stays live when the admin console (or another tab) writes */
@@ -6545,7 +6590,33 @@ function syncShared(){
     const same = JSON.stringify(disk.tournaments||[]) === JSON.stringify(state.tournaments||[])
               && JSON.stringify(disk.customGames||[]) === JSON.stringify(state.customGames||[]);
     if(same) return false;
-    state.tournaments = disk.tournaments||[];
+    /* El disco es un respaldo, no la verdad. Si en memoria hay mensajes o
+       resultados que todavía no alcanzaron a guardarse, se conservan:
+       de ahí venía el mensaje de chat que aparecía y luego se borraba. */
+    const memT = {}; (state.tournaments||[]).forEach(t=>{ if(t && t.id) memT[t.id] = t; });
+    const unionById = (a, b, key)=>{
+      const seen = {}, out = [];
+      (a||[]).concat(b||[]).forEach(x=>{
+        if(!x) return;
+        const k = key(x);
+        if(k == null){ out.push(x); return; }
+        if(seen[k]) return;
+        seen[k] = 1; out.push(x);
+      });
+      return out;
+    };
+    const fromDisk = (disk.tournaments||[]).map(dt=>{
+      const mt = dt && dt.id ? memT[dt.id] : null;
+      if(!mt) return dt;
+      dt.chat = unionById(dt.chat, mt.chat, m=> m && m.id)
+                  .sort((x,y)=> (x.ts||0)-(y.ts||0)).slice(-300);
+      dt.results = unionById(dt.results, mt.results, r=> r && (r.date + '|' + r.name));
+      return dt;
+    });
+    /* torneos que solo existen en memoria (aún sin guardar) no se pierden */
+    const dIds = {}; fromDisk.forEach(t=>{ if(t && t.id) dIds[t.id] = 1; });
+    (state.tournaments||[]).forEach(t=>{ if(t && t.id && !dIds[t.id]) fromDisk.push(t); });
+    state.tournaments = fromDisk;
     state.customGames = disk.customGames||[];
     if(disk.questions) state.questions = disk.questions;
     if(disk.jokes) state.jokes = disk.jokes;
