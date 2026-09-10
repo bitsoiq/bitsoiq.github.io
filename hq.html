@@ -6547,23 +6547,40 @@ function codeTaken(c){
   return (state.tournaments||[]).some(t=> t.code===c) || (state.history||[]).some(h=> h.code===c);
 }
 /* ---------- cuánta gente entró con el código ---------- */
+/* ---------- cuánta gente se ha registrado en total ----------
+   La tabla de correos se llena en cuanto alguien entra con Google, así que
+   ahí SÍ están todos: hasta quien escogió avatar y cerró sin jugar.
+   Solo el admin puede leerla, por eso este conteo vive en HQ. */
+async function registeredCount(force){
+  if(!CLOUD.on) return null;
+  const fresh = HEADCOUNT.regAt && (Date.now() - HEADCOUNT.regAt < 60000);
+  if(fresh && !force) return HEADCOUNT.reg;
+  try{
+    const r = await cfetch('player_emails?select=name&limit=1', { headers:{ 'Prefer':'count=exact' } });
+    if(!r || !r.ok) return HEADCOUNT.reg != null ? HEADCOUNT.reg : null;
+    const cr = (r.headers && r.headers.get('content-range')) || '';
+    const n = parseInt((cr.split('/')[1] || ''), 10);
+    if(!isFinite(n)) return HEADCOUNT.reg != null ? HEADCOUNT.reg : null;
+    HEADCOUNT.reg = n; HEADCOUNT.regAt = Date.now();
+    return n;
+  }catch(e){ return HEADCOUNT.reg != null ? HEADCOUNT.reg : null; }
+}
 async function hqHeads(tid, force){
   const el = document.getElementById('hq-heads');
   if(!el || !tid) return;
   const t = (state.tournaments||[]).find(x=> x.id === tid);
   const local  = enrolledCount(t);
   const played = playedCount(t);
-  const paint = (n)=>{
+  /* el número y ya: gente que entró con su correo Y con el código de ESTE torneo */
+  const paint = (inTour)=>{
     const el2 = document.getElementById('hq-heads'); if(!el2) return;
-    const v = Math.max(n || 0, local);
-    el2.textContent = '👥 ' + v + (v === 1 ? ' player' : ' players');
-    el2.title = v + ' in this tournament · ' + played + ' have played at least once.' +
-                '\nCounts everyone who joined with the code, not who is online. Click to refresh.';
+    const v = Math.max(inTour || 0, local);
+    el2.textContent = '👥 ' + v;
+    el2.title = v + ' in this tournament · ' + played + ' have played. Click to refresh.';
   };
   paint(HEADCOUNT.n[tid]);
   if(force) el.textContent = '👥 …';
-  const n = await tourHeadcount(tid, force);
-  paint(n);
+  paint(await tourHeadcount(tid, force));
 }
 function copyCode(c){
   const done = ()=> toast(`Code ${c} copied — share it with the team 🔑`);

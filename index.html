@@ -797,14 +797,7 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 @keyframes gifCharge{0%,100%{transform:translateX(-8px) rotate(-4deg)}30%{transform:translateX(2px)}50%{transform:translateX(12px) rotate(6deg) scale(1.08)}70%{transform:translateX(2px)}}
 @keyframes gifDisco{0%{filter:hue-rotate(0) drop-shadow(0 0 6px rgba(225,254,56,.6)); transform:rotate(-6deg)}50%{transform:rotate(6deg)}100%{filter:hue-rotate(360deg) drop-shadow(0 0 6px rgba(225,254,56,.6)); transform:rotate(-6deg)}}
 .feed-in{display:flex; gap:10px; margin-top:12px; align-items:center}
-/* la caja de escribir, el GIF y el Send no se van con el scroll */
-#ar-right .rwrap .feed-in{
-  position:sticky; bottom:0; z-index:13;
-  padding:10px 0 2px;
-  background:var(--card);
-  box-shadow:0 0 0 8px var(--card), 0 -10px 18px -8px rgba(0,0,0,.55);
-}
-#ar-right .rwrap #gif-picker{ position:sticky; bottom:64px; z-index:13; background:var(--card) }
+
 
 .feed-in input{flex:1; border:2px solid var(--line); border-radius:12px; padding:11px 14px; font-weight:700; font-size:14px; outline:none; background:var(--bg2); color:var(--ink)}
 .feed-in input:focus{border-color:var(--neon)}
@@ -909,14 +902,39 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 @media(max-width:980px){ .arena-grid{grid-template-columns:1fr} }
 
 
-/* ===== TABS CONGELADOS: no se van con el scroll ===== */
-#ar-right .rwrap > .card{overflow:clip}
-#ar-right .rwrap .tabs2{
-  position:sticky; top:0; z-index:14;
-  box-shadow:0 0 0 8px var(--card), 0 10px 18px -6px rgba(0,0,0,.55);
+/* ===== LA CAJA NO SE MUEVE: solo scrollea lo de adentro =====
+   La tarjeta ocupa exactamente el alto disponible. Los tabs de arriba
+   y la barra de escribir de abajo quedan clavados; lo único que corre
+   es la lista de mensajes (o la de puntos, estudio, chistes). */
+#ar-right .rwrap{ overflow:hidden; }
+#ar-right .rwrap > .card:first-child{
+  flex:1 1 auto; min-height:0;
+  display:flex; flex-direction:column;
+  overflow:hidden;
 }
+#ar-right .rwrap > .card:first-child > .tabs2{ flex:0 0 auto; }
+#ar-right .rwrap > .card:first-child > .feed{
+  flex:1 1 auto; min-height:0; height:auto; overflow-y:auto;
+}
+#ar-right .rwrap > .card:first-child > .feed-in,
+#ar-right .rwrap > .card:first-child > #gif-picker{ flex:0 0 auto; }
+/* el resto del panel (Points, Study, Jokes) también corre por dentro */
+#ar-right .rwrap > .card:first-child > .paneScroll{
+  flex:1 1 auto; min-height:0; overflow-y:auto;
+  margin:0 -4px; padding:0 4px 2px;
+  scrollbar-width:thin; scrollbar-color:var(--line) transparent;
+}
+#ar-right .rwrap > .card:first-child > .paneScroll::-webkit-scrollbar{width:8px}
+#ar-right .rwrap > .card:first-child > .paneScroll::-webkit-scrollbar-thumb{background:var(--line); border-radius:99px}
+/* los boosters van debajo, sin robarle alto a la caja */
+#ar-right .rwrap > .boostwrap{ flex:0 0 auto; margin-top:12px; }
+
 @media(max-width:980px){
-  #ar-right .rwrap .tabs2{ top:62px; }   /* debajo de la barra de arriba */
+  /* en celular la página entera scrollea: la caja vuelve a crecer sola */
+  #ar-right .rwrap{ overflow:visible; }
+  #ar-right .rwrap > .card:first-child{ display:block; overflow:visible; }
+  #ar-right .rwrap > .card:first-child > .feed{ height:62vh; }
+  #ar-right .rwrap > .card:first-child > .paneScroll{ overflow:visible; }
 }
 
 /* ===== "NOT OPEN YET": marco de colores en movimiento ===== */
@@ -7502,15 +7520,15 @@ function renderSide(t){
         <button class="btn sm" onclick="sendMsg()">Send</button>
       </div>
       <div id="gif-picker" class="hidden">${GIF_SET.map((g,i)=>`<button onclick="sendGif(${i})" title="${esc(g.l)}"><span class="fgif ${g.a}" style="font-size:30px">${g.e}</span><span class="gl">${esc(g.l)}</span></button>`).join('')}</div>
-    </div>` + boostWidget(t) + `</div>`;
+    </div><div class="boostwrap">` + boostWidget(t) + `</div></div>`;
     const inp = $('#chat2-in'); if(inp) inp.value = typed;
     const f = $('#chat2-feed'); if(f) f.scrollTop = f.scrollHeight;
   } else if(arenaTab==='points'){
-    box.innerHTML = `<div class="rwrap"><div class="card">${tabsHTML('points')}${pointsHTML(t)}</div></div>`;
+    box.innerHTML = `<div class="rwrap"><div class="card">${tabsHTML('points')}<div class="paneScroll">${pointsHTML(t)}</div></div></div>`;
   } else if(arenaTab==='study'){
-    box.innerHTML = `<div class="rwrap"><div class="card">${tabsHTML('study')}${iqStudyHTML(t)}</div></div>`;
+    box.innerHTML = `<div class="rwrap"><div class="card">${tabsHTML('study')}<div class="paneScroll">${iqStudyHTML(t)}</div></div></div>`;
   } else {
-    box.innerHTML = `<div class="rwrap"><div class="card">${tabsHTML('jokes')}${jokesHTML()}</div></div>`;
+    box.innerHTML = `<div class="rwrap"><div class="card">${tabsHTML('jokes')}<div class="paneScroll">${jokesHTML()}</div></div></div>`;
   }
 }
 function fmtDate2(ts){ return new Date(ts).toLocaleDateString('en-US',{month:'short', day:'numeric'}); }
@@ -7713,9 +7731,7 @@ function paintHeads(n, t){
   if(!v){ el.style.display = 'none'; return; }
   el.style.display = '';
   el.textContent = '👥 ' + v;
-  el.title = (v === 1 ? '1 player is in this tournament'
-                      : v + ' players are in this tournament') +
-             ' — everyone who joined with the code, not who is online right now.';
+  el.title = v + ' in this tournament';
 }
 async function refreshHeads(force){
   const t = (typeof curT === 'function') ? curT() : null;
