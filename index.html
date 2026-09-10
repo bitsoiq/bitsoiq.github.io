@@ -6662,7 +6662,22 @@ async function tryJoin(){
     await cloudPull();
     t = findTour(code);
   }
-  if(!t){ err.textContent = "That code doesn't match any live tournament — double-check with your admin."; sBad(); return; }
+  if(!t){
+    /* distinguimos "código equivocado" de "la nube no me deja ver nada" */
+    const visibles = (state.tournaments || []).length;
+    if(!authToken()){
+      err.innerHTML = '🔑 Your session needs a refresh. Sign in with Google again and the arena will show up.';
+      sBad();
+      setTimeout(()=>{ try{ localStorage.removeItem('bitsoiq_auth'); location.reload(); }catch(e){} }, 2200);
+      return;
+    }
+    if(!visibles){
+      err.innerHTML = "We can't see any tournament right now — that's on our side, not your code. Try again in a minute, or ping the admin.";
+      sBad(); return;
+    }
+    err.textContent = "That code doesn't match any live tournament — double-check with your admin.";
+    sBad(); return;
+  }
   if(t.closed && !player.codes.includes(code)){ err.textContent = 'This tournament is no longer accepting new players — ask your admin to reopen registration.'; sBad(); return; }
   err.textContent = '';
   if(!player.name || !player.avatar){ joinPending = code; buildAvGrid(); show('scr-setup'); return; }
