@@ -6863,13 +6863,14 @@ function rulesHTML(){
    SCORING ENGINE v2 — fixed 100→10 scale + day events + All-in
    ============================================================ */
 function basePts(rank, N){
+  /* ESCALA v5 — anclas fijas: 1er lugar 125 · último 30, jueguen 10 o 600.
+     Lo de en medio se reparte por percentil. Piso alto a propósito:
+     el objetivo es que la gente abra la app, no que sea buena en minijuegos. */
   if(N <= 1) return 125;
   const frac = (N - rank) / (N - 1);
-  const convex = 10 + Math.round(70 * Math.pow(frac, 1.6));
-  const gentle = 100 - 15 * (rank - 1);
-  let base = Math.max(10, convex, gentle);
-  if(N >= 10) base += (rank === 1 ? 25 : rank === 2 ? 15 : rank === 3 ? 8 : 0);   /* bonus de podio */
-  return base;
+  let base = 30 + 70 * Math.pow(frac, 1.3);
+  if(N >= 10) base += (rank === 1 ? 25 : rank === 2 ? 12 : rank === 3 ? 6 : 0);
+  return Math.round(base);
 }
 function dayEvent(t, date){ const d = (t && t.days || []).find(x=> x.date===date); return (d && d.ev && d.ev.k) ? d.ev : null; }
 function evLabel(ev){
@@ -7491,9 +7492,12 @@ function evDefSet(tid, k, v){
   if(k === 'dhOn') D.dhOn = !!+v;
   else if(k === 'dhMode') D.dhMode = (v === 'once' ? 'once' : 'every');
   else if(k === 'allin') D.allin = clamp(Math.round(+v) || 2, 2, 5);
-  else D[k] = clamp(Math.round(+v) || D[k], k==='dhreq' ? 2 : 1, k==='dhreq' ? 30 : 500);
+  else if(k === 'dhreq') D.dhreq = clamp(Math.round(+v) || D.dhreq || 3, 2, 10);
+  else D[k] = clamp(Math.round(+v) || D[k], 1, 500);
   saveState();
   toast('Booster defaults saved ⚡');
+  /* redibujamos para que las etiquetas de abajo reflejen el número nuevo al instante */
+  if(k === 'dhreq' || k === 'dhMode' || k === 'dhv'){ try{ renderTournament(); }catch(e){} }
 }
 function boostersTabHTML(t){
   const days = (t.days||[]).filter(d=> d.gameId);
@@ -7511,12 +7515,18 @@ function boostersTabHTML(t){
       <p class="cardhint">Nothing to schedule: the bonus pays ONLY on streak milestone days (day X — and every X days after, if you pick that mode). Between milestones it stays dormant, so the streak keeps meaning something.</p>
       <label class="alabel">💎 % extra points</label>
       <input type="number" class="tinput" style="width:130px" value="${D.dhv}" min="1" max="300" onchange="evDefSet('${t.id}','dhv',this.value)">
-      <label class="alabel">💎 streak days required</label>
-      <input type="number" class="tinput" style="width:130px" value="${D.dhreq}" min="2" max="30" onchange="evDefSet('${t.id}','dhreq',this.value)">
+      <p class="cardhint">It multiplies the points you earned that day, it isn't a flat bonus.
+        At <b>${D.dhv}%</b>, a day worth 60 pts pays <b>${Math.round(60*(1+(+D.dhv||50)/100))}</b>.
+        100% = double. 200% = triple.</p>
+      <label class="alabel">💎 how often it fires — streak days required</label>
+      <select class="tinput" style="width:auto" onchange="evDefSet('${t.id}','dhreq', this.value)">
+        ${[2,3,4,5,6,7,8,9,10].map(n=>`<option value="${n}" ${(+D.dhreq||3)===n?'selected':''}>Every ${n} days in a row</option>`).join('')}
+      </select>
+      <p class="cardhint">With <b>${D.dhreq}</b>, a player has to show up ${D.dhreq} days straight to trigger it. Lower = fires often and feels generous. Higher = rarer and hits harder.</p>
       <label class="alabel">💎 reward mode</label>
       <select class="tinput" style="width:auto" onchange="evDefSet('${t.id}','dhMode', this.value)">
-        <option value="every" ${(D.dhMode||'every')==='every'?'selected':''}>Every ${D.dhreq} days — day ${D.dhreq}, ${D.dhreq*2}, ${D.dhreq*3}…</option>
-        <option value="once" ${D.dhMode==='once'?'selected':''}>Only once — the exact day the streak hits ${D.dhreq}</option>
+        <option value="every" ${(D.dhMode||'every')==='every'?'selected':''}>Repeating — pays on day ${D.dhreq}, ${D.dhreq*2}, ${D.dhreq*3}…</option>
+        <option value="once" ${D.dhMode==='once'?'selected':''}>One-time — pays only the day the streak hits ${D.dhreq}</option>
       </select>
       <label class="alabel">🃏 All-in — multiplier of the players' once-per-tournament card</label>
       <input type="number" class="tinput" style="width:130px" value="${D.allin||2}" min="2" max="5" onchange="evDefSet('${t.id}','allin',this.value)">
