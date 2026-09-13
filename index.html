@@ -7687,7 +7687,7 @@ function pointsDaysHTML(t){
 }
 function pointsOverallHTML(t){
   const st = standings(t);
-  let html = `<h3 style="margin-bottom:4px">🏆 Overall standings <span class="pill dim">1st of N takes 100 · last takes 10+</span></h3>`;
+  let html = `<h3 style="margin-bottom:4px">🏆 Overall standings <span class="pill dim" title="Points come from where you finish that day, not from your raw game score. The scale is the same whether 20 people play or 400.">Each day · 1st 125 pts → last 10 pts</span></h3>`;
   if(!st.length){
     return html + `<div class="empty" style="padding:30px"><div class="big">🏟</div>The board is empty — validated runs will start filling it.</div>`;
   }
