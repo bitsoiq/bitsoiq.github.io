@@ -984,6 +984,29 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 @media(prefers-reduced-motion:reduce){
   .soonbox{animation:none} .soonemo{animation:none} .soondot{animation:none}
 }
+
+.ptsinfo{display:inline-flex; align-items:center; gap:7px; cursor:pointer; border:0;
+  white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis}
+.ptsinfo .ii{display:inline-flex; align-items:center; justify-content:center;
+  width:16px; height:16px; border-radius:99px; border:1.5px solid currentColor;
+  font-size:10px; font-weight:900; font-style:italic; line-height:1; opacity:.85}
+.ptsinfo:hover{color:var(--ink)}
+.ptsinfo:hover .ii{opacity:1}
+
+.ptslegend{display:flex; align-items:center; gap:8px; margin-top:9px; font-size:12px;
+  font-weight:700; color:var(--ink3)}
+.dotv{width:7px; height:7px; border-radius:99px; background:var(--ink3); flex:0 0 auto}
+.ptsrow.ptsvar span::after{content:''}
+.ptsrow.ptsvar b::after{content:'•'; margin-left:8px; font-size:11px; color:var(--ink3); vertical-align:2px}
+.ptsbox{background:var(--bg2); border:2px solid var(--line); border-radius:16px; overflow:hidden}
+.ptsrow{display:flex; align-items:center; justify-content:space-between; gap:14px;
+  padding:12px 16px; font-size:15px; font-weight:800}
+.ptsrow + .ptsrow{border-top:1px solid var(--line)}
+.ptsrow span{font-weight:900; color:var(--neon); font-variant-numeric:tabular-nums}
+.ptsnote{margin-top:16px; font-size:13.5px; line-height:1.6; color:var(--ink2); font-weight:600}
+.ptsnote p{margin:0 0 10px}
+.ptsnote p:last-child{margin:0}
+.ptsnote b{color:var(--ink)}
 .daytag{text-align:center; margin:6px 0 18px}
 .daytag .d1{font-size:13px; font-weight:900; letter-spacing:4px; color:var(--ink3)}
 .daytag .d2{font-size:40px; font-weight:900; letter-spacing:-1.5px; color:#fff; line-height:1.05}
@@ -6636,15 +6659,23 @@ function copyCode(c){
    SCORING ENGINE v2 — fixed 100→10 scale + day events + All-in
    ============================================================ */
 function basePts(rank, N){
+  /* ============================================================
+     ESCALA DE PUNTOS v5
+     Dos anclas que NUNCA se mueven, jueguen 10 personas o 600:
+        1er lugar  = 125     ultimo lugar = 30
+     Lo de en medio se reparte por percentil, así que tu lugar vale
+     lo mismo proporcionalmente sin importar cuánta gente entre.
+
+     Por qué el piso son 30 y no 10: el objetivo del torneo no es
+     ser bueno en minijuegos, es abrir la app y leer la pregunta.
+     Si aparecer no paga, la gente deja de aparecer. Con 30 de piso,
+     entrar los 21 días le compite a jugar la mitad y quedar arriba.
+     ============================================================ */
   if(N <= 1) return 125;
-  /* percentil convexo: premia de verdad el top cuando hay mucha gente…
-     …pero nunca cae más de 15 pts por posición, para que en grupos chicos no haya abismos */
-  const frac = (N - rank) / (N - 1);
-  const convex = 10 + Math.round(70 * Math.pow(frac, 1.6));
-  const gentle = 100 - 15 * (rank - 1);
-  let base = Math.max(10, convex, gentle);
-  if(N >= 10) base += (rank === 1 ? 25 : rank === 2 ? 15 : rank === 3 ? 8 : 0);   /* bonus de podio */
-  return base;
+  const frac = (N - rank) / (N - 1);            /* 1 = primero · 0 = último */
+  let base = 30 + 70 * Math.pow(frac, 1.3);
+  if(N >= 10) base += (rank === 1 ? 25 : rank === 2 ? 12 : rank === 3 ? 6 : 0);   /* podio */
+  return Math.round(base);
 }
 function dayEvent(t, date){ const d = (t && t.days || []).find(x=> x.date===date); return (d && d.ev && d.ev.k) ? d.ev : null; }
 function evLabel(ev){
@@ -7617,6 +7648,49 @@ function sendGif(i){
 function toggleGifPicker(){ const p = $('#gif-picker'); if(p) p.classList.toggle('hidden'); }
 let pointsView = 'today', pointsShowAll = false;
 function setPointsView(v){ pointsView = v; const t = curT(); if(t) renderSide(t); sTap(); }
+/* ---------- "¿cómo se ganan los puntos?" en cristiano ---------- */
+function ptsHelp(){
+  sTap && sTap();
+  modal(`
+    <h2 style="margin:0 0 4px">🏆 How points work</h2>
+    <p class="sub" style="margin:0 0 18px"><b style="color:var(--ink)">1st place takes 125 points, last place takes 30.</b><br>
+    Those two never move, no matter how many people play. Unless there are boosters 👀</p>
+
+    <div class="ptsbox">
+      <div class="ptsrow"><b>🥇 1st place</b><span>125</span></div>
+      <div class="ptsrow ptsvar"><b>🥈 2nd place</b><span>~112</span></div>
+      <div class="ptsrow ptsvar"><b>🥉 3rd place</b><span>~105</span></div>
+      <div class="ptsrow ptsvar"><b>Middle of the pack</b><span>~60</span></div>
+      <div class="ptsrow"><b>🐌 Last place</b><span>30</span></div>
+      <div class="ptsrow"><b>Didn't play</b><span style="color:#FF7A85">0</span></div>
+    </div>
+    <div class="ptslegend"><span class="dotv"></span> These shift a little with how many people play that day.</div>
+
+    <div class="ptsnote">
+      <p><b>Your rank that day is what scores, not your game score.</b>
+      A brilliant run that lands 40th is worth exactly the same as a lucky one that lands 40th.</p>
+
+      <p><b>Why last place still gets 30.</b>
+      This isn't a game about being good at minigames. It's about opening the app and learning one thing about Bitso.
+      If showing up paid nothing, nobody would show up. So it pays.</p>
+
+      <p><b>Why the middle moves.</b>
+      Points are split by <i>where you land in the pack</i>, not by a fixed table.
+      Finishing 3rd out of 300 is harder than 3rd out of 10, so it's worth more.
+      More players never costs you points — it only makes a good day count for more.</p>
+
+      <p><b>And that's why you shouldn't give up.</b>
+      Show up all 21 days from the middle of the pack and you'll finish ahead of someone
+      who dominates for two weeks and then disappears. Consistency is the real cheat code. 🎮</p>
+
+      <p><b>…and then there are boosters. 👀</b>
+      Certain days break the 125 ceiling entirely. They're not announced in advance,
+      you'll just open the app one morning and find one waiting. One good day with a booster
+      can be worth a whole week without one. Another reason to keep showing up.</p>
+    </div>
+
+    <div style="margin-top:18px; text-align:right"><button class="btn" onclick="closeModal()">Got it</button></div>`);
+}
 function pointsHTML(t){
   const nav = `<div class="tabs2" style="margin:2px 0 14px">
     <button class="${pointsView==='today'?'on':''}" onclick="setPointsView('today')">📊 Today</button>
@@ -7687,7 +7761,7 @@ function pointsDaysHTML(t){
 }
 function pointsOverallHTML(t){
   const st = standings(t);
-  let html = `<h3 style="margin-bottom:4px">🏆 Overall standings <span class="pill dim" title="Points come from where you finish that day, not from your raw game score. The scale is the same whether 20 people play or 400.">Each day · 1st 125 pts → last 10 pts</span></h3>`;
+  let html = `<h3 style="margin-bottom:4px">🏆 Overall standings <button class="pill dim ptsinfo" onclick="ptsHelp()" title="How points work">How do points work? <span class="ii">i</span></button></h3>`;
   if(!st.length){
     return html + `<div class="empty" style="padding:30px"><div class="big">🏟</div>The board is empty — validated runs will start filling it.</div>`;
   }
