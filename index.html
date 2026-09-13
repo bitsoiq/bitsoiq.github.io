@@ -993,6 +993,9 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 .ptsinfo:hover{color:var(--ink)}
 .ptsinfo:hover .ii{opacity:1}
 
+.ptshelp{text-align:left}
+.ptshelp h2{text-align:left}
+.ptshelp .sub{text-align:left}
 .ptslegend{display:flex; align-items:center; gap:8px; margin-top:9px; font-size:12px;
   font-weight:700; color:var(--ink3)}
 .dotv{width:7px; height:7px; border-radius:99px; background:var(--ink3); flex:0 0 auto}
@@ -7651,8 +7654,8 @@ function setPointsView(v){ pointsView = v; const t = curT(); if(t) renderSide(t)
 /* ---------- "¿cómo se ganan los puntos?" en cristiano ---------- */
 function ptsHelp(){
   sTap && sTap();
-  modal(`
-    <h2 style="margin:0 0 4px">🏆 How points work</h2>
+  modal(`<div class="ptshelp">
+    <h2 style="margin:0 0 6px">🏆 How points work</h2>
     <p class="sub" style="margin:0 0 18px"><b style="color:var(--ink)">1st place takes 125 points, last place takes 30.</b><br>
     Those two never move, no matter how many people play. Unless there are boosters 👀</p>
 
@@ -7667,17 +7670,18 @@ function ptsHelp(){
     <div class="ptslegend"><span class="dotv"></span> These shift a little with how many people play that day.</div>
 
     <div class="ptsnote">
-      <p><b>Your rank that day is what scores, not your game score.</b>
+      <p><b>Your rank that day is what scores, not your raw game score.</b>
       A brilliant run that lands 40th is worth exactly the same as a lucky one that lands 40th.</p>
 
       <p><b>Why last place still gets 30.</b>
-      This isn't a game about being good at minigames. It's about opening the app and learning one thing about Bitso.
-      If showing up paid nothing, nobody would show up. So it pays.</p>
+      Being sharp at the minigames is half the battle, and yes, it counts. The other half is showing up
+      and knowing the answer, and that half is open to everyone. Nobody should walk away with nothing
+      for playing, so a rough day still pays.</p>
 
       <p><b>Why the middle moves.</b>
       Points are split by <i>where you land in the pack</i>, not by a fixed table.
       Finishing 3rd out of 300 is harder than 3rd out of 10, so it's worth more.
-      More players never costs you points — it only makes a good day count for more.</p>
+      More players never costs you points, it only makes a good day count for more.</p>
 
       <p><b>And that's why you shouldn't give up.</b>
       Show up all 21 days from the middle of the pack and you'll finish ahead of someone
@@ -7689,7 +7693,8 @@ function ptsHelp(){
       can be worth a whole week without one. Another reason to keep showing up.</p>
     </div>
 
-    <div style="margin-top:18px; text-align:right"><button class="btn" onclick="closeModal()">Got it</button></div>`);
+    <div style="margin-top:18px; text-align:right"><button class="btn" onclick="closeModal()">Got it</button></div>
+  </div>`);
 }
 function pointsHTML(t){
   const nav = `<div class="tabs2" style="margin:2px 0 14px">
