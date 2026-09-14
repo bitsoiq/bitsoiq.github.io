@@ -1091,6 +1091,9 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 .pj-chip{font-size:11.5px; font-weight:900; background:var(--bg2); border:2px solid var(--line); border-radius:999px; padding:4px 10px; white-space:nowrap}
 
 /* --- crowned avatar: 1st place wears it everywhere --- */
+
+.bchip{margin-left:7px; background:#4B3A7A; color:#E9DDFF; border-radius:999px;
+  padding:2px 8px; font-size:10px; font-weight:900; letter-spacing:.3px; white-space:nowrap}
 .crowned{overflow:visible !important; position:relative}
 .crowned img.avimg{border-radius:inherit}
 .crowned::after{content:'👑'; position:absolute; top:-12px; left:50%; transform:translateX(-50%) rotate(-14deg); font-size:14px; line-height:1; filter:drop-shadow(0 2px 3px rgba(0,0,0,.55)); z-index:3}
@@ -6787,6 +6790,21 @@ function iqAnnounce(t){
   }
   if(dirty){ saveState._quiet = true; try{ saveState(); }catch(e){} saveState._quiet = false; }
 }
+function playedToday(t, date){
+  /* Cuánta gente jugó hoy, punto. Incluye a quien terminó su partida pero
+     falló la pregunta: jugó igual. El tablero de puntos sigue mostrando
+     solo a los que validaron, pero el contador cuenta a todos. */
+  try{
+    const n = {};
+    (t && t.results || []).forEach(r=>{ if(r && r.date === date && r.name) n[r.name] = 1; });
+    return Object.keys(n).length;
+  }catch(e){ return 0; }
+}
+function ptsLeader(rows){
+  /* quién va primero POR PUNTOS (que es lo que cuenta), no por metros */
+  if(!rows || !rows.length) return null;
+  return rows.slice().sort((a,b)=> (b.pts - a.pts) || (a.rank - b.rank))[0];
+}
 function dayRows(t, date){
   const rs = (t.results||[]).filter(r=> r.date===date && r.value != null);   /* las corridas iniciadas sin terminar no puntúan */
   if(!rs.length) return [];
@@ -7561,7 +7579,7 @@ function renderTodayCard(t){
         <div class="gherorow">
           <span class="pill dim">${g.dur ? g.dur+'s' : 'until you drop'}</span>
           <span class="pill dim">scored in ${esc(g.unit)}</span>
-          <span class="pill neon">${rows.length} played today</span>
+          <span class="pill neon">${playedToday(t, tKey(t))} played today</span>
         </div>
         ${(d=>`
         <div class="stepsrow">
@@ -7583,12 +7601,24 @@ function renderTodayCard(t){
               ? `<button class="btn ghost" onclick='showSecondChance("${g.id}")'>🎤 Replay once — costs a joke</button>`
               : `<span class="pill dim">✅ Done for today · next game in <span class="cdv">--:--:--</span></span>`}
         </div>`)(daily(t))}
-        ${rows.length ? `<div class="todaychips">${rows.map(r=>`
-          <span class="pchip ${r.rank===1?'first':''} ${r.name===player.name?'me':''}" title="${esc(g.fmt(r.value))}">
-            <span class="fav ${r.rank===1?'crowned':''}">${avatarHTML(avOf(r))}</span>${esc(r.name)}<span class="pv">· ${g.fmt(r.value)}</span>
-          </span>`).join('')}</div>` : ''}
+        ${(()=>{
+          if(!rows.length) return '';
+          /* ordenamos por PUNTOS para que esta lista y el tablero de la derecha
+             digan lo mismo: quien usó un booster puede ir arriba aunque su
+             marca cruda sea menor */
+          const porPts = rows.slice().sort((a,b)=> (b.pts - a.pts) || (a.rank - b.rank));
+          const lider = porPts[0];
+          return `<div class="todaychips">${porPts.map(r=>{
+            const esLider = r === lider;
+            const boost = (r.tags||[]).filter(x=> /ALL-IN|💎|🚀|🪂/.test(x));
+            return `<span class="pchip ${esLider?'first':''} ${r.name===player.name?'me':''}"
+              title="${esc(g.fmt(r.value))} · ${r.pts} pts${boost.length?' · '+esc(boost.join(' ')):''}">
+              <span class="fav ${esLider?'crowned':''}">${avatarHTML(avOf(r))}</span>${esc(r.name)}<span class="pv">· ${g.fmt(r.value)}</span>${r.allin?`<span class="bchip">🃏 All-in</span>`:''}
+            </span>`;
+          }).join('')}</div>`;
+        })()}
         ${best ? `<div class="laurel"><span class="lv">🥇</span>
-          <div style="text-align:center"><div class="ls">BEST PLAYER TODAY</div><div class="ln">${esc(best.name)} 👑</div><div class="ls">${g.fmt(best.value)}</div></div>
+          <div style="text-align:center"><div class="ls">BEST SCORE TODAY</div><div class="ln">${esc(best.name)} 👑</div><div class="ls">${g.fmt(best.value)}</div></div>
           <span class="lv">🥇</span></div>` : ''}
       </div>
     </div>`;
@@ -7800,17 +7830,29 @@ function pointsHTML(t){
   </div>`;
   return nav + (pointsView === 'today' ? pointsTodayHTML(t) : pointsView === 'days' ? pointsDaysHTML(t) : pointsOverallHTML(t));
 }
+function byPoints(rows){
+  /* La tabla del día se ordena y se numera por PUNTOS, que es lo que cuenta
+     para el torneo. La marca del juego sigue visible debajo del nombre, y
+     quien usó un booster trae su etiqueta, así se entiende por qué subió. */
+  const out = (rows || []).slice().sort((a,b)=> (b.pts - a.pts) || (a.rank - b.rank));
+  let pos = 0;
+  return out.map((r,i)=>{
+    if(i === 0 || r.pts !== out[i-1].pts) pos = i + 1;   /* empate en puntos = mismo puesto */
+    return Object.assign({}, r, { place: pos });
+  });
+}
 function pointsTodayHTML(t){
   const rows = dayRows(t, tKey(t));
   const day = (t.days||[]).find(d=> d.date===tKey(t));
   const g = day && day.gameId ? gameById(day.gameId) : null;
   if(!g) return `<div class="empty" style="padding:26px"><div class="big">😴</div>Rest day — no game today.</div>`;
   let html = `<h3 style="margin-bottom:4px">📊 Today — ${esc(g.name)}</h3>`;
-  html += rows.length ? rows.map(r=>`
+  const orden = byPoints(rows);
+  html += orden.length ? orden.map(r=>`
     <div class="lb-row ${r.name===player.name?'me':''}">
-      <div class="rk">${r.rank}</div>
-      <span class="av ${r.rank===1?'crowned':''}">${avatarHTML(avOf(r))}</span>
-      <div><div>${esc(r.name)}${r.name===player.name?' (you)':''}${iqBadge(t, r.name)}</div><div class="sub">${g.fmt(r.value)}${r.tags && r.tags.length ? ' · ' + r.tags.join(' · ') : ''}</div></div>
+      <div class="rk">${r.place}</div>
+      <span class="av ${r.place===1?'crowned':''}">${avatarHTML(avOf(r))}</span>
+      <div><div>${esc(r.name)}${r.name===player.name?' (you)':''}${iqBadge(t, r.name)}</div><div class="sub">${g.fmt(r.value)}${r.rank !== r.place ? ` <span style="color:var(--ink3)">(#${r.rank} by score)</span>` : ''}${r.tags && r.tags.length ? ' · ' + r.tags.join(' · ') : ''}</div></div>
       <div class="pts">+${r.pts} pts</div>
     </div>`).join('')
     : `<div class="empty" style="padding:20px"><div class="big">🕹</div>Nobody's on the board yet — go first.</div>`;
@@ -7825,14 +7867,14 @@ function pointsDaysHTML(t){
   if(!gds.length) return html + `<div class="empty" style="padding:30px"><div class="big">🌱</div>No game days yet — come back after day one.</div>`;
   const mis = new Set(cuMissed(t));
   html += gds.map(d=>{
-    const rows = dayRows(t, d.date);
+    const rows = byPoints(dayRows(t, d.date));
     const g = gameById(d.gameId);
     const me = rows.find(r=> r.name===player.name);
     const win = rows[0];
     const open = pointsDayOpen === d.date;
     const isToday = d.date === today;
     let pills;
-    if(me) pills = `<span class="dpill rank">#${me.rank} of ${rows.length}</span><span class="dpill score">${me.g ? me.g.fmt(me.value) : me.value}</span><span class="dpill pts">${me.pts} pts</span>${(me.tags||[]).map(x=> `<span class="dpill boost">${x.replace(/[^\x20-\x7E%×+.0-9A-Za-z\-']/g,'').trim()}</span>`).join('')}`;
+    if(me) pills = `<span class="dpill rank">#${me.place} of ${rows.length}</span><span class="dpill score">${me.g ? me.g.fmt(me.value) : me.value}</span><span class="dpill pts">${me.pts} pts</span>${(me.tags||[]).map(x=> `<span class="dpill boost">${x.replace(/[^\x20-\x7E%×+.0-9A-Za-z\-']/g,'').trim()}</span>`).join('')}`;
     else if(mis.has(d.date)) pills = `<span class="dpill warn">Missed — recoverable in the arena</span>`;
     else if(isToday) pills = `<span class="dpill dim">Not played yet — the day is live</span>`;
     else pills = `<span class="dpill dim">Didn't play · 0 pts</span>`;
@@ -7845,14 +7887,14 @@ function pointsDaysHTML(t){
           <div class="dpills">${pills}</div>
         </div>
         <div class="dwin">
-          ${win ? `<div class="wlbl">Best today</div><div class="wnm">${esc(win.name)}</div><div class="wsc">${win.g ? win.g.fmt(win.value) : win.value}</div>` : `<div class="wlbl">no runs</div>`}
+          ${win ? `<div class="wlbl">Top today</div><div class="wnm">${esc(win.name)}</div><div class="wsc">${win.pts} pts</div>` : `<div class="wlbl">no runs</div>`}
           <span class="chev">${open ? '▲' : '▼'}</span>
         </div>
       </div>
       ${open ? (rows.length ? rows.map(r=> `
         <div class="lb-row ${r.name===player.name?'me':''}" style="margin:8px 0 0">
-          <div class="rk">${r.rank}</div>
-          <span class="av">${avatarHTML(avOf(r))}</span>
+          <div class="rk">${r.place}</div>
+          <span class="av ${r.place===1?'crowned':''}">${avatarHTML(avOf(r))}</span>
           <div><div><b>${esc(r.name)}${r.name===player.name?' (you)':''}</b></div><div class="sub">${r.g ? r.g.fmt(r.value) : r.value}${r.tags && r.tags.length ? ' · ' + r.tags.join(' ') : ''}</div></div>
           <div class="pts">${r.pts} pts</div>
         </div>`).join('') : '<div class="empty" style="padding:14px">Nobody played this day.</div>') : ''}

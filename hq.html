@@ -6594,7 +6594,7 @@ function hcPanelHTML(t, rows, stamp){
       <div style="display:flex; align-items:center; gap:12px; padding:10px 14px; ${i?'border-top:1px solid var(--line)':''}">
         <span style="width:24px; text-align:right; color:var(--ink3); font-weight:900; font-size:12px; flex:0 0 auto">${i+1}</span>
         <b style="flex:0 0 34%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px">${esc(r.name)}</b>
-        <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12.5px; color:var(--ink3); font-weight:700">${esc(em[r.name] || '\u2014')}</span>
+        <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12.5px; color:var(--ink3); font-weight:700; ${em[r.name]?'':'opacity:.5'}">${esc(em[r.name] || 'email not on file yet')}</span>
       </div>`).join('')
       : `<div style="padding:26px; text-align:center; color:var(--ink3); font-weight:700">Nobody yet.</div>`}
   </div>
@@ -7198,11 +7198,15 @@ function histInsightsPaint(hid){
       ${qrows.length ? `
       <h3>🧠 Every message, worst learned first <span class="pill dim">red = needs reinforcement</span></h3>
       <div class="hscroll">${qrows.map(qbar).join('')}</div>
-      <h3>👥 Every player — accuracy, volume & contact <span class="pill dim">emails admin-only</span></h3>
+      <h3>👥 Every player — accuracy, volume & contact
+        <span class="pill dim">emails admin-only</span>
+        <span class="pill ${prows.filter(p=>p.email).length === prows.length ? 'green' : ''}">${prows.filter(p=>p.email).length}/${prows.length} emails on file</span>
+      </h3>
+      ${prows.some(p=>!p.email) ? `<p class="cardhint" style="margin:0 0 8px">The missing ones fill in on their own the next time each player opens the app. Nothing to do.</p>` : ''}
       ${emailsHint() ? `<div class="empty" style="padding:12px; margin-bottom:8px; text-align:left; font-size:12.5px">${emailsHint()}</div>` : ''}
       <div class="hscroll">
       ${prows.map((p,i)=> `<div class="hrow"><span class="hrk">${i+1}</span>
-        <span class="hnm" style="white-space:normal">${esc(p.name)}${p.email ? `<div class="hml">${esc(p.email)}</div>` : ''}</span>
+        <span class="hnm" style="white-space:normal">${esc(p.name)}<div class="hml" style="${p.email?'':'opacity:.45'}">${p.email ? esc(p.email) : 'email not on file yet'}</div></span>
         ${bar(p.pct, qcol(p.pct))}<b style="min-width:150px; text-align:right">${p.pct}% · ${p.c}/${p.a} ans · ${p.pts} pts</b></div>`).join('')}
       </div>` : '<div class="empty" style="padding:22px">No trivia data was captured for this tournament.</div>'}
       <h3>💡 Feedback from this tournament</h3>
