@@ -6909,6 +6909,23 @@ function iqAnnounce(t){
   }
   if(dirty){ saveState._quiet = true; try{ saveState(); }catch(e){} saveState._quiet = false; }
 }
+function playedToday(t, date){
+  /* todos los que jugaron ese día, hayan acertado la pregunta o no */
+  try{
+    const n = {};
+    (t && t.results || []).forEach(r=>{ if(r && r.date === date && r.name) n[r.name] = 1; });
+    return Object.keys(n).length;
+  }catch(e){ return 0; }
+}
+function byPoints(rows){
+  /* ordena y numera por PUNTOS, igual que la app del jugador */
+  const out = (rows || []).slice().sort((a,b)=> (b.pts - a.pts) || (a.rank - b.rank));
+  let pos = 0;
+  return out.map((r,i)=>{
+    if(i === 0 || r.pts !== out[i-1].pts) pos = i + 1;
+    return Object.assign({}, r, { place: pos });
+  });
+}
 function dayRows(t, date){
   const rs = (t.results||[]).filter(r=> r.date===date && r.value != null);
   if(!rs.length) return [];
@@ -6982,12 +6999,12 @@ function todayCardHTML(t){
   const me = state.profile ? state.profile.name : '';
   return `<div class="card">
     <h3>📊 Today — ${esc(g.name)}</h3>
-    <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px">${ICONS[g.id]}<span class="pill dim">scored in ${esc(g.unit)}</span><span class="pill neon">${rows.length} played</span></div>
-    ${rows.length ? rows.map(r=>`
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap">${ICONS[g.id]}<span class="pill dim">scored in ${esc(g.unit)}</span><span class="pill neon" title="Everyone who played today, right or wrong on the question">${playedToday(t, tKey(t))} played</span><span class="pill dim" title="Only these earn points: they played AND got the question right">${rows.length} scored</span></div>
+    ${rows.length ? byPoints(rows).map(r=>`
       <div class="lb-row ${r.name===me?'me':''}">
-        <div class="rk">${r.rank}</div>
-        <span class="av ${r.rank===1?'crowned':''}">${avatarHTML(avOf(r))}</span>
-        <div><div>${esc(r.name)}</div><div class="sub">${g.fmt(r.value)}</div></div>
+        <div class="rk">${r.place}</div>
+        <span class="av ${r.place===1?'crowned':''}">${avatarHTML(avOf(r))}</span>
+        <div><div>${esc(r.name)}</div><div class="sub">${g.fmt(r.value)}${(r.mult > 1 && r.rank !== r.place) ? ` <span style="color:var(--ink3)">(#${r.rank} by score)</span>` : ''}${r.tags && r.tags.length ? ' · ' + r.tags.join(' · ') : ''}</div></div>
         <div class="pts">+${r.pts} pts</div>
       </div>`).join('')
     : `<div class="empty" style="padding:24px"><div class="big">🕹</div>No validated runs yet today.<br><span style="font-size:12.5px">Play the game of the day and pass the trivia to appear here.</span></div>`}
@@ -7187,18 +7204,19 @@ function histInsightsPaint(hid){
         <div class="hc"><b>${tot ? Math.round(okN/tot*100) : 0}%</b><span>accuracy</span></div>
         <div class="hc"><b>${st.length ? esc(st[0].name) : '—'}</b><span>champion 👑</span></div>
       </div>
-      <h3>🏆 Final standings — everyone</h3>
+      <h3>🏆 Final standings <span class="pill dim">${st.length} with points</span></h3>
+      <p class="cardhint" style="margin:0 0 8px">Only players who <b>played and got the question right</b> earn points, so this list is shorter than the number who played. Boosters are already included in each total.</p>
       <div class="hscroll">
       ${st.length ? st.map((p,i)=> `<div class="hrow"><span class="hrk">${i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1)}</span><span class="hnm">${esc(p.name)}</span>${bar(Math.round(p.pts/(st[0].pts||1)*100), 'var(--neon)')}<b>${p.pts} pts · ${p.days}d</b></div>`).join('') : '<div class="empty" style="padding:16px">No runs recorded.</div>'}
       </div>
-      <h3>📅 Participation & accuracy by day</h3>
+      <h3>📅 Participation & accuracy by day <span class="pill dim">👥 = played, right or wrong</span></h3>
       <div class="hscroll">
       ${daysD.map(d=> `<div class="hrow"><span class="hnm" style="min-width:190px; flex:none">${fmtDay(d.date)} · ${esc(d.game)}</span>${bar(Math.round(d.players/maxP*100), '#7CD5FF')}<b>${d.players} 👥${d.acc!=null ? ' · '+d.acc+'% ✅' : ''}</b></div>`).join('')}
       </div>
       ${qrows.length ? `
       <h3>🧠 Every message, worst learned first <span class="pill dim">red = needs reinforcement</span></h3>
       <div class="hscroll">${qrows.map(qbar).join('')}</div>
-      <h3>👥 Every player — accuracy, volume & contact
+      <h3>👥 Every player <span class="pill dim">${prows.length} answered the question</span>
         <span class="pill dim">emails admin-only</span>
         <span class="pill ${prows.filter(p=>p.email).length === prows.length ? 'green' : ''}">${prows.filter(p=>p.email).length}/${prows.length} emails on file</span>
       </h3>

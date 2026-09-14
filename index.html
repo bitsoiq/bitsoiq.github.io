@@ -2013,7 +2013,17 @@ function pushEmailOnce(){
   const sig = me.name + '|' + em;
   if(CLOUD._emSig === sig) return Promise.resolve();
   CLOUD._emSig = sig;
-  return cloudUpsert('player_emails', [{ name: me.name, email: em }], 'name').catch(()=>{});
+  /* si la nube lo rechaza no nos quedamos callados: reintentamos y dejamos
+     constancia, para no confundir "lo rechazaron" con "todavía no entra" */
+  return cfetch('player_emails?on_conflict=name', {
+    method:'POST',
+    headers:{ 'Prefer':'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify([{ name: me.name, email: em }])
+  }).then(r=>{
+    if(r && r.ok){ CLOUD._emOk = true; return; }
+    CLOUD._emOk = false; CLOUD._emErr = (r && r.status) || 0;
+    CLOUD._emSig = null;                    /* que lo vuelva a intentar */
+  }).catch(()=>{ CLOUD._emOk = false; CLOUD._emSig = null; });
 }
 function cloudPushMe(){
   if(!CLOUD.on) return Promise.resolve();
@@ -7852,7 +7862,7 @@ function pointsTodayHTML(t){
     <div class="lb-row ${r.name===player.name?'me':''}">
       <div class="rk">${r.place}</div>
       <span class="av ${r.place===1?'crowned':''}">${avatarHTML(avOf(r))}</span>
-      <div><div>${esc(r.name)}${r.name===player.name?' (you)':''}${iqBadge(t, r.name)}</div><div class="sub">${g.fmt(r.value)}${r.rank !== r.place ? ` <span style="color:var(--ink3)">(#${r.rank} by score)</span>` : ''}${r.tags && r.tags.length ? ' · ' + r.tags.join(' · ') : ''}</div></div>
+      <div><div>${esc(r.name)}${r.name===player.name?' (you)':''}${iqBadge(t, r.name)}</div><div class="sub">${g.fmt(r.value)}${(r.mult > 1 && r.rank !== r.place) ? ` <span style="color:var(--ink3)">(#${r.rank} by score)</span>` : ''}${r.tags && r.tags.length ? ' · ' + r.tags.join(' · ') : ''}</div></div>
       <div class="pts">+${r.pts} pts</div>
     </div>`).join('')
     : `<div class="empty" style="padding:20px"><div class="big">🕹</div>Nobody's on the board yet — go first.</div>`;
