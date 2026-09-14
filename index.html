@@ -2095,13 +2095,42 @@ function cloudRecomputeStreaks(){
   });
   state.streaks = st;
 }
+/* ---------- memoria de sincronización, entre sesiones ----------
+   Sin esto, cada vez que alguien abre la app se vuelve a bajar el roster
+   COMPLETO (600 personas con foto = varios MB). Guardando hasta dónde
+   íbamos, la siguiente visita solo pide lo que cambió. */
+const SYNC_LS = 'bitsoiq_sync';
+function syncLoad(){
+  try{
+    const o = JSON.parse(localStorage.getItem(SYNC_LS) || 'null');
+    if(o && typeof o === 'object') return o;
+  }catch(e){}
+  return null;
+}
+function syncForgetRoster(){
+  /* borra solo la marca del roster: la próxima sincronización lo pide completo */
+  try{
+    const o = syncLoad() || {};
+    delete o.plAt;
+    localStorage.setItem(SYNC_LS, JSON.stringify(o));
+  }catch(e){}
+}
+function syncSave(){
+  try{
+    const m = CLOUD.m || {};
+    localStorage.setItem(SYNC_LS, JSON.stringify({
+      stamp: m.stamp || '', chatTs: m.chatTs || 0, trivId: m.trivId || 0,
+      plAt: m.plAt || '', resAt: m.resAt || '', slowAt: m.slowAt || 0
+    }));
+  }catch(e){}
+}
 async function cloudPull(){
   if(!CLOUD.on || CLOUD.busy || CLOUD.pending) return false;
   CLOUD.busy = true;
   let changed = false;
   try{
     const get = p => cfetch(p).then(r=> r.ok ? r.json() : []).catch(()=>[]);
-    CLOUD.m = CLOUD.m || { stamp:'', chatTs:0, trivId:0, slowAt:0 };
+    CLOUD.m = CLOUD.m || syncLoad() || { stamp:'', chatTs:0, trivId:0, slowAt:0 };
     const slow = Date.now() - CLOUD.m.slowAt > 600000;  /* red de seguridad: barrido completo cada 10 min */
 
     /* --- tournaments: fetch full docs only when something actually changed --- */
@@ -2166,11 +2195,20 @@ async function cloudPull(){
 
 
     /* jokes & chances: tiny tables — every tick, so admin strikes reflect in seconds */
-    const [jkR, chR] = await Promise.all([get('jokes?select=*'), get('chances?select=*')]);
-    const jArr = jkR.map(j=> j.data).filter(Boolean).sort((a,b)=> (a.ts||0)-(b.ts||0));
-    if(JSON.stringify(jArr) !== JSON.stringify(state.jokes||[])){ state.jokes = jArr; changed = true; }
-    const chM = {}; chR.forEach(c=>{ if(c && c.name!=null) chM[c.name] = c.n; });
-    if(JSON.stringify(chM) !== JSON.stringify(state.chances||{})){ state.chances = chM; changed = true; }
+    /* los chistes cambian poco: cada minuto basta y ahorra megas al día */
+    const jkDue = !CLOUD.m.jkAt || (Date.now() - CLOUD.m.jkAt > 60000);
+    const [jkR, chR] = jkDue
+      ? await Promise.all([get('jokes?select=*'), get('chances?select=*')])
+      : [null, null];
+    if(jkDue) CLOUD.m.jkAt = Date.now();
+    if(jkR){
+      const jArr = jkR.map(j=> j.data).filter(Boolean).sort((a,b)=> (a.ts||0)-(b.ts||0));
+      if(JSON.stringify(jArr) !== JSON.stringify(state.jokes||[])){ state.jokes = jArr; changed = true; }
+    }
+    if(chR){
+      const chM = {}; chR.forEach(c=>{ if(c && c.name!=null) chM[c.name] = c.n; });
+      if(JSON.stringify(chM) !== JSON.stringify(state.chances||{})){ state.chances = chM; changed = true; }
+    }
     /* --- results: today every tick, everything on the slow tick --- */
     const today = new Date(Date.now() - 9*3600e3);   /* generous window: covers all startHours */
     const dkeys = [];
@@ -2245,6 +2283,7 @@ async function cloudPull(){
     }
   }catch(e){}
   CLOUD.busy = false;
+  try{ syncSave(); }catch(e){}      /* recordamos hasta dónde llegamos, para la próxima visita */
   return changed;
 }
 function slimState(){
@@ -2260,6 +2299,11 @@ function slimState(){
     });
   });
   c.triviaLog = (state.triviaLog||[]).slice(-1200);
+  /* El roster se guarda ENTERO, con fotos. Son la experiencia del jugador:
+     si alguien escribe en el chat, su cara tiene que estar ahí. Si no cupiera,
+     el respaldo de saveState recorta y además olvida la marca de sincronización,
+     para que la próxima visita las vuelva a pedir en vez de perderlas. */
+  c.roster = state.roster;
   return c;
 }
 function saveState(){
@@ -6798,6 +6842,24 @@ function loadPlayer(){
 function savePlayer(){ try{ localStorage.setItem(P_KEY, JSON.stringify(player)); }catch(e){} }
 
 /* ---------- shared-store writes: merge, never clobber the admin ---------- */
+function rosterSinFotos(ros, dejar){
+  /* quita fotos (nunca personas) para que el roster quepa cuando el disco está lleno */
+  try{
+    const r = ros || {}; const nombres = Object.keys(r); if(!nombres.length) return r;
+    const conFoto = nombres
+      .filter(n=> r[n] && typeof r[n].avatar === 'string' && r[n].avatar.indexOf('img:') === 0)
+      .sort((a,b)=> (r[b].ts||0) - (r[a].ts||0));
+    const keep = {}; conFoto.slice(0, dejar||0).forEach(n=> keep[n] = 1);
+    const out = {};
+    nombres.forEach(n=>{
+      const x = r[n]; if(!x) return;
+      if(x.avatar && x.avatar.indexOf('img:') === 0 && !keep[n]){
+        out[n] = Object.assign({}, x); delete out[n].avatar;
+      } else out[n] = x;
+    });
+    return out;
+  }catch(e){ return ros; }
+}
 function saveState(){
   /* el disco es solo una copia de respaldo: si no cabe, recortamos.
      Nunca dejamos que un fallo de escritura tumbe lo que ya está en memoria. */
@@ -6813,27 +6875,35 @@ function saveState(){
     disk.triviaLog   = slim.triviaLog;
     disk.streaks     = slim.streaks;
     disk.recapSeen   = slim.recapSeen;
+    disk.roster      = slim.roster;
     return disk;
   };
   let okWrite = false;
   try{ okWrite = write(merged()); }
   catch(e){
-    /* cuota llena: intentamos con lo mínimo indispensable antes de rendirnos */
+    /* cuota llena: primero tiramos el historial de trivia, luego las fotos viejas */
     try{
       const slim = (typeof slimState === 'function') ? slimState() : state;
       okWrite = write(Object.assign({}, slim, {triviaLog:[]}));
-    }catch(e2){
+    }catch(e2a){
       try{
         const slim = (typeof slimState === 'function') ? slimState() : state;
-        const tiny = Object.assign({}, slim, {triviaLog:[], recapSeen:{}});
+        okWrite = write(Object.assign({}, slim, {triviaLog:[], roster: rosterSinFotos(slim.roster, 150)}));
+        if(okWrite) syncForgetRoster();       /* las pedimos de nuevo la próxima vez */
+      }catch(e2){
+      try{
+        const slim = (typeof slimState === 'function') ? slimState() : state;
+        const tiny = Object.assign({}, slim, {triviaLog:[], recapSeen:{}, roster: rosterSinFotos(slim.roster, 0)});
         tiny.tournaments = (slim.tournaments||[]).map(t=> Object.assign({}, t, {
           results:(t.results||[]).slice(-120), chat:(t.chat||[]).slice(-40)
         }));
         okWrite = write(tiny);
+        if(okWrite) syncForgetRoster();
       }catch(e3){
         if(!saveState._warned){ saveState._warned = true;
           try{ toast('Storage full — your progress lives in the cloud ☁️'); }catch(_){}
         }
+      }
       }
     }
   }
