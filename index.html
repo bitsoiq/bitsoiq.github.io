@@ -2131,6 +2131,14 @@ async function cloudPull(){
   try{
     const get = p => cfetch(p).then(r=> r.ok ? r.json() : []).catch(()=>[]);
     CLOUD.m = CLOUD.m || syncLoad() || { stamp:'', chatTs:0, trivId:0, slowAt:0 };
+    /* AUTO-REPARACIÓN: si venimos con marca de "ya lo tengo todo" pero el tablero
+       local está vacío, la marca miente (el disco se limpió). La borramos para
+       volver a bajar resultados y chat desde cero. Nada se pierde: la nube manda. */
+    if(!CLOUD.m._ok && (CLOUD.m.resAt || CLOUD.m.chatTs)){
+      const hayAlgo = (state.tournaments||[]).some(t=> (t.results||[]).length || (t.chat||[]).length);
+      if(!hayAlgo){ CLOUD.m.resAt = ''; CLOUD.m.chatTs = 0; CLOUD.m.slowAt = 0; }
+      CLOUD.m._ok = 1;
+    }
     const slow = Date.now() - CLOUD.m.slowAt > 600000;  /* red de seguridad: barrido completo cada 10 min */
 
     /* --- tournaments: fetch full docs only when something actually changed --- */
@@ -2216,11 +2224,23 @@ async function cloudPull(){
       const d = new Date(Date.now() - k*86400e3);
       dkeys.push(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'));
     }
+    /* el día del torneo se define en hora de México: lo añadimos por si el
+       reloj del jugador está en otro país y los dos de arriba no lo cubren */
+    try{
+      (state.tournaments||[]).forEach(t=>{ const k = tKey(t); if(k && dkeys.indexOf(k) < 0) dkeys.push(k); });
+    }catch(e){}
     /* SOLO LO NUEVO: pedimos las filas modificadas desde la última vez.
        Cada resultado viaja UNA vez en lugar de re-descargar el board entero cada tick. */
+    /* PRIMERA VUELTA DE CADA SESIÓN: pedimos el tablero de HOY completo, por fecha.
+       Es una sola petición chica (~70 KB) y garantiza que nadie vea un tablero a
+       medias por venir con una marca de sincronización de una sesión anterior.
+       De ahí en adelante seguimos pidiendo solo lo que cambió. */
+    const primera = !CLOUD.m._boot;
+    CLOUD.m._boot = 1;
     let rq;
-    if(CLOUD.m.resAt && !slow) rq = 'results?select=*&updated_at=gt.' + encodeURIComponent(CLOUD.m.resAt) + '&order=updated_at.asc&limit=2000';
-    else rq = slow ? 'results?select=*' : 'results?select=*&date=in.(' + dkeys.join(',') + ')';
+    if(slow) rq = 'results?select=*';
+    else if(primera || !CLOUD.m.resAt) rq = 'results?select=*&date=in.(' + dkeys.join(',') + ')';
+    else rq = 'results?select=*&updated_at=gt.' + encodeURIComponent(CLOUD.m.resAt) + '&order=updated_at.asc&limit=2000';
     let results = await get(rq);
     if(!Array.isArray(results)) results = [];
     if(results.length && results[0].updated_at === undefined && CLOUD.m.resAt){
@@ -2291,7 +2311,13 @@ function slimState(){
      en el dispositivo solo guardamos lo reciente para no reventar el límite de 5 MB */
   const c = Object.assign({}, state);
   c.tournaments = (state.tournaments||[]).map(t=>{
-    const keep = (t.days||[]).filter(d=> d.gameId).map(d=> d.date).slice(-4);
+    /* los últimos 4 días YA JUGADOS. Antes tomaba los 4 últimos del torneo
+       (que caen en octubre), así que el corte quedaba en el futuro y se
+       tiraban TODOS los resultados, incluidos los de hoy. */
+    let hoy = '9999-99-99';
+    try{ hoy = tKey(t); }catch(e){}
+    const jugados = (t.days||[]).filter(d=> d.gameId && d.date <= hoy).map(d=> d.date);
+    const keep = jugados.slice(-4);
     const cut = keep.length ? keep[0] : '0000-00-00';
     return Object.assign({}, t, {
       results: (t.results||[]).filter(r=> r.date >= cut),
