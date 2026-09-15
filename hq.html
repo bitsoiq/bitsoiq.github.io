@@ -2277,110 +2277,155 @@ function shade(hex, f){ // f: -1..1 darken/lighten
 const GAMES = [
 
 /* ---- 1. TAP RUSH ---- */
-{ id:'tap', name:'Tap Rush', tag:'Read the board. Grab the gold. Dodge the bombs.', dur:30,
-  unit:'points', lowerBetter:false, fmt:v=>fmtN(v)+' pts',
+{ id:'tap', name:'Tap Rush', tag:'Smash the button. Catch the bubbles. Dodge the ice.', dur:20,
+  unit:'taps', lowerBetter:false, fmt:v=>fmtN(v)+' taps',
   grad:'linear-gradient(160deg,#FF9A5C,#E8412C)',
-  how:'Targets pop up all over the board and shrink away in about a second. Thirty seconds on the clock.\n\n🪙 COIN — tap it. +1 point.\n💎 DIAMOND — tap it. +5 points, but it is smaller and disappears faster.\n💣 BOMB — do NOT tap it. It costs you 4 points.\n\nCHAIN MULTIPLIER: hit 6 in a row without a mistake and everything is worth ×2. Hit 12 in a row and it climbs to ×3. Tapping a bomb or letting a coin expire resets you to ×1.\n\nThe board speeds up and the bombs get more frequent as the clock runs down. Fast fingers help, but picking the right target is what wins it.',
+  how:'Hit the big TAP button as many times as you can. It jumps around after most hits, so keep chasing it.\n\nBubbles float in every few seconds. They vanish fast, so decide quickly:\n\n\u23f1\ufe0f GREEN +3 SEC — tap it for three extra seconds on the clock.\n\ud83d\udd35 BLUE +3 PTS — tap it for three free taps.\n\ud83e\uddca PALE BLUE ICE — do NOT tap it. It freezes the button for three seconds.\n\nThe green and the blue look alike at a glance, and the ice is close to both. Read before you swing.',
   run(stage, api){
     const arena = document.createElement('div'); arena.className='arena';
     arena.style.background='radial-gradient(700px 420px at 30% 20%, #FF9A5C, transparent 60%), radial-gradient(700px 480px at 80% 90%, #FF4FA0, transparent 55%), #6C2BD9';
     arena.style.overflow='hidden';
     stage.appendChild(arena);
     const combo = document.createElement('div'); combo.className='combo-tag'; arena.appendChild(combo);
+    const btn = document.createElement('button'); btn.className='tapbtn'; btn.textContent='TAP';
+    let lx = 40, ly = 35;
+    const place = ()=>{ btn.style.left = lx+'%'; btn.style.top = ly+'%'; };
+    place(); arena.appendChild(btn);
 
-    let chain = 0, mult = 1, alive = [], spawnT = null, tick = null, t0 = performance.now(), dead = false;
+    let taps=0, streak=0, last=0, frozen=0, bubT=null, tick=null, bubbles=[], dead=false, frost=null;
 
-    const setCombo = ()=>{
-      combo.textContent = mult > 1 ? `\u26a1 \u00d7${mult} chain \u2014 ${chain} in a row` : (chain >= 2 ? `${chain} in a row` : '');
-      combo.style.transform='scale(1.15)'; setTimeout(()=>{ if(combo) combo.style.transform='scale(1)'; }, 80);
-    };
-    const bumpChain = ()=>{ chain++; mult = chain >= 12 ? 3 : chain >= 6 ? 2 : 1; setCombo(); };
-    const breakChain = ()=>{ if(chain){ chain = 0; mult = 1; setCombo(); } };
+    function flashArena(col, op){
+      const f = document.createElement('div');
+      f.style.cssText = 'position:absolute; inset:0; pointer-events:none; background:'+col+'; opacity:'+(op||0.3)+'; transition:opacity .3s';
+      arena.appendChild(f);
+      requestAnimationFrame(()=>{ f.style.opacity='0'; });
+      setTimeout(()=> f.remove(), 340);
+    }
+    function freeze(){
+      frozen = performance.now() + 3000;
+      btn.style.filter = 'grayscale(1) brightness(.75)';
+      btn.style.pointerEvents = 'none';
+      if(!frost){
+        frost = document.createElement('div');
+        frost.style.cssText = 'position:absolute; inset:0; pointer-events:none; background:rgba(150,220,255,.28);'
+          + 'display:grid; place-items:center; font-size:66px; font-weight:900; color:#EAF9FF;'
+          + 'text-shadow:0 3px 10px rgba(0,0,0,.45); letter-spacing:-1px';
+        arena.appendChild(frost);
+      }
+      sBad();
+    }
+    function unfreeze(){
+      frozen = 0;
+      btn.style.filter = '';
+      btn.style.pointerEvents = '';
+      if(frost){ frost.remove(); frost = null; }
+    }
 
-    function spawn(){
-      if(dead) return;
-      const el = performance.now() - t0;                 /* ms transcurridos */
-      const p = Math.min(1, el / 30000);                 /* 0 -> 1 conforme avanza */
+    btn.addEventListener('pointerdown', (e)=>{
+      e.preventDefault();
+      if(dead || frozen) return;
+      const now = performance.now();
+      streak = (now-last<600) ? streak+1 : 1; last = now;
+      api.add(1); taps++;
+      combo.textContent = streak>=10 ? `\ud83d\udd25 ON FIRE \u2014 ${streak} chain` : streak>=5 ? `${streak} chain` : '';
+      combo.style.transform='scale(1.15)'; setTimeout(()=>{ if(combo) combo.style.transform='scale(1)'; },80);
+      sTap();
+      const r = arena.getBoundingClientRect(), b = btn.getBoundingClientRect();
+      const cx = b.left-r.left+85, cy = b.top-r.top+85;
+      burst(arena, cx, cy, '#FFE24B', 6);
+      const rip = document.createElement('div'); rip.className='ripple';
+      rip.style.cssText=`left:${cx-95}px; top:${cy-95}px; width:190px; height:190px`;
+      arena.appendChild(rip); setTimeout(()=> rip.remove(), 520);
+      /* se mueve menos que antes: 45% se queda, 35% brinquito, 20% salto largo */
       const roll = Math.random();
-      /* las bombas y el oro aparecen más conforme sube la tensión */
-      const kind = roll < (0.10 + 0.14*p) ? 'bomb'
-                 : roll < (0.30 + 0.14*p) ? 'gold'
-                 : 'coin';
-      const size = kind === 'gold' ? 74 : kind === 'bomb' ? 92 : 86;
-      const life = (kind === 'gold' ? 900 : 1250) - 420*p;
+      if(roll < 0.45){ /* se queda */ }
+      else if(roll < 0.80){
+        lx = clamp(lx + rand(-11,11), 4, 74);
+        ly = clamp(ly + rand(-10,10), 6, 62);
+        place();
+      } else {
+        let nx, ny, guard = 0;
+        do { nx = rand(4,74); ny = rand(6,62); } while(Math.hypot(nx-lx, ny-ly) < 28 && ++guard < 20);
+        lx = nx; ly = ny; place();
+      }
+    });
+
+    /* ---------- burbujas ---------- */
+    const KINDS = [
+      { k:'time', w:0.40, emoji:'\u23f1\ufe0f', label:'+3 SEC', bg:'radial-gradient(circle at 34% 28%, #D8FFC9, #3DDC64 60%, #0E7A33)', col:'#3DDC64' },
+      { k:'pts',  w:0.36, emoji:'\ud83d\udd35', label:'+3 PTS', bg:'radial-gradient(circle at 34% 28%, #CFE6FF, #2E86FF 60%, #124A9E)', col:'#2E86FF' },
+      { k:'ice',  w:0.24, emoji:'\ud83e\uddca', label:'ICE',    bg:'radial-gradient(circle at 34% 28%, #F2FBFF, #A6E4FF 60%, #5FB4DC)', col:'#A6E4FF' }
+    ];
+    function pickKind(){
+      const r = Math.random(); let acc = 0;
+      for(const k of KINDS){ acc += k.w; if(r <= acc) return k; }
+      return KINDS[0];
+    }
+    function spawnBubble(){
+      if(dead) return;
+      const kind = pickKind();
+      const life = 1500;
       const d = document.createElement('button');
       d.type = 'button';
       d.style.cssText = 'position:absolute; border:0; padding:0; cursor:pointer; border-radius:999px;'
-        + 'width:' + size + 'px; height:' + size + 'px;'
-        + 'left:' + rand(4, 78) + '%; top:' + rand(6, 66) + '%;'
-        + 'display:grid; place-items:center; font-size:' + Math.round(size*0.46) + 'px;'
-        + 'font-weight:900; color:#1A1206; touch-action:manipulation;'
-        + 'box-shadow:0 6px 0 rgba(0,0,0,.35), 0 10px 22px rgba(0,0,0,.35);'
-        + 'transition:transform .09s ease;'
-        + 'background:' + (kind==='gold' ? 'radial-gradient(circle at 34% 28%, #FFF6C2, #FFC53D 62%, #E39400)'
-                          : kind==='bomb' ? 'radial-gradient(circle at 34% 28%, #FF8E8E, #E03B3B 62%, #8E1414)'
-                          : 'radial-gradient(circle at 34% 28%, #EFFFB9, #D6F24B 62%, #96B510)') + ';';
-      d.textContent = kind==='gold' ? '\ud83d\udc8e' : kind==='bomb' ? '\ud83d\udca3' : '\ud83e\ude99';
+        + 'width:92px; height:92px; left:' + rand(3,80) + '%; top:' + rand(5,68) + '%;'
+        + 'display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;'
+        + 'font-weight:900; color:#0C2230; touch-action:manipulation;'
+        + 'box-shadow:0 6px 0 rgba(0,0,0,.32), 0 10px 22px rgba(0,0,0,.35);'
+        + 'transition:transform .1s ease; background:' + kind.bg + ';';
+      d.innerHTML = '<span style="font-size:30px; line-height:1">' + kind.emoji + '</span>'
+                  + '<span style="font-size:13px; letter-spacing:.3px">' + kind.label + '</span>';
       const o = { el:d, kind, born: performance.now(), life, gone:false };
       d.addEventListener('pointerdown', ev=>{
         ev.preventDefault(); ev.stopPropagation();
         if(o.gone || dead) return;
         o.gone = true;
         const r = arena.getBoundingClientRect(), b = d.getBoundingClientRect();
-        const cx = b.left - r.left + b.width/2, cy = b.top - r.top + b.height/2;
-        if(kind === 'bomb'){
-          api.add(-4); breakChain(); sBad();
-          burst(arena, cx, cy, '#FF6B6B', 10);
-          flashArena('#FF4D4D');
+        const cx = b.left-r.left+b.width/2, cy = b.top-r.top+b.height/2;
+        if(kind.k === 'ice'){
+          freeze();
+          burst(arena, cx, cy, '#A6E4FF', 12);
+          floatPt(arena, cx, cy, 'FROZEN', '#A6E4FF', 26);
+          flashArena('#8FD8FF', .35);
+        } else if(kind.k === 'time'){
+          api.addTime(3); sGood();
+          burst(arena, cx, cy, '#3DDC64', 10);
+          floatPt(arena, cx, cy, '+3 sec', '#3DDC64', 26);
         } else {
-          const val = (kind==='gold' ? 5 : 1) * mult;
-          api.add(val); bumpChain(); sTap();
-          burst(arena, cx, cy, kind==='gold' ? '#FFD84B' : '#E1FE38', kind==='gold' ? 12 : 6);
-          floatPt(arena, cx, cy, '+' + val, kind==='gold' ? '#FFD84B' : '#E1FE38', kind==='gold' ? 30 : 22);
-          const rip = document.createElement('div'); rip.className='ripple';
-          rip.style.cssText = 'left:' + (cx-90) + 'px; top:' + (cy-90) + 'px; width:180px; height:180px';
-          arena.appendChild(rip); setTimeout(()=> rip.remove(), 520);
+          api.add(3); taps += 3; sGood();
+          burst(arena, cx, cy, '#2E86FF', 10);
+          floatPt(arena, cx, cy, '+3 pts', '#7FC0FF', 26);
         }
         d.remove();
-        alive = alive.filter(x=> x !== o);
+        bubbles = bubbles.filter(x=> x !== o);
       });
       arena.appendChild(d);
-      alive.push(o);
-      /* el ritmo se acelera: de una cada 520 ms a una cada 230 ms */
-      spawnT = setTimeout(spawn, 520 - 290*p + rand(-60, 60));
-    }
-
-    function flashArena(col){
-      const f = document.createElement('div');
-      f.style.cssText = 'position:absolute; inset:0; pointer-events:none; background:' + col + '; opacity:.30; transition:opacity .28s';
-      arena.appendChild(f);
-      requestAnimationFrame(()=>{ f.style.opacity = '0'; });
-      setTimeout(()=> f.remove(), 320);
+      bubbles.push(o);
+      bubT = setTimeout(spawnBubble, rand(2200, 3600));
     }
 
     tick = setInterval(()=>{
       if(dead) return;
       const now = performance.now();
-      alive.slice().forEach(o=>{
-        const age = now - o.born;
-        const k = age / o.life;
-        if(k >= 1){
-          o.gone = true; o.el.remove();
-          alive = alive.filter(x=> x !== o);
-          if(o.kind !== 'bomb') breakChain();      /* dejar ir una moneda rompe la cadena */
-          return;
-        }
-        o.el.style.transform = 'scale(' + (1 - 0.45*k) + ')';
-        o.el.style.opacity = String(1 - 0.35*k);
+      if(frozen){
+        const left = Math.max(0, frozen - now);
+        if(frost) frost.textContent = '\u2744\ufe0f ' + (left/1000).toFixed(1) + 's';
+        if(left <= 0) unfreeze();
+      }
+      bubbles.slice().forEach(o=>{
+        const k = (now - o.born) / o.life;
+        if(k >= 1){ o.gone = true; o.el.remove(); bubbles = bubbles.filter(x=> x !== o); return; }
+        o.el.style.transform = 'scale(' + (1 - 0.30*k) + ')';
+        o.el.style.opacity = String(1 - 0.28*k);
       });
     }, 40);
 
-    spawn();
+    bubT = setTimeout(spawnBubble, rand(1800, 2600));
     return ()=>{
       dead = true;
-      clearTimeout(spawnT); clearInterval(tick);
-      alive.forEach(o=>{ try{ o.el.remove(); }catch(e){} });
-      alive = [];
+      clearTimeout(bubT); clearInterval(tick);
+      bubbles.forEach(o=>{ try{ o.el.remove(); }catch(e){} });
+      bubbles = [];
     };
   }
 },
@@ -4439,21 +4484,25 @@ const GAMES = [
     function rowFor(r){
       if(rows[r]) return rows[r];
       let type = 'grass';
-      if(r >= 5){
+      const t = Math.min(1, r / 120);
+      if(r >= 4){
         const p1 = rows[r-1] ? rows[r-1].type : 'grass';
         const p2 = rows[r-2] ? rows[r-2].type : 'grass';
-        if(p1==='road' && p2==='road') type = 'grass';
-        else type = Math.random() < (p1==='road' ? 0.24 : 0.50) ? 'road' : 'grass';
+        const pRoad  = 0.16 + (0.70 - 0.16) * t;
+        const pGrass = 0.44 + (0.92 - 0.44) * t;
+        if(r < 32 && p1==='road' && p2==='road') type = 'grass';
+        else if(p1==='grass' && p2==='grass') type = 'road';
+        else type = Math.random() < (p1==='road' ? pRoad : pGrass) ? 'road' : 'grass';
       }
       const row = {type, deco:[]};
       if(type==='grass'){
         for(let i=0;i<3;i++) if(Math.random()<0.4) row.deco.push({x:rand(30,W-30), s:rand(0.7,1.15)});
       } else {
         row.dir = Math.random()<0.5 ? 1 : -1;
-        row.speed = rand(42, 72) + Math.min(34, r*0.50);
-        row.carW = randi(58, 74);
+        row.speed = rand(40, 68) + 74*t + Math.min(40, r*0.42);
+        row.carW = randi(58, 76);
         row.cars = [];
-        const gap = rand(430, 620);
+        const gap = rand(490, 700) - 290*t;
         for(let x = -120; x < W+160; x += gap + rand(-25,45)) row.cars.push({x, col: CARCOLS[randi(0,CARCOLS.length-1)]});
       }
       rows[r] = row;
@@ -5854,6 +5903,14 @@ function beginGame(gid, mode, isRetry){
       set(v){ if(!run || run.over) return; run.score = Math.max(0,v); hud(run.score); },
       get score(){ return run ? run.score : 0; },
       timeLeft(){ return run ? run.tLeft : 0; },
+      addTime(v){
+        if(!run || run.over || !run.timed) return;
+        run.tLeft = Math.max(0, run.tLeft + v);
+        const s = Math.max(0, run.tLeft);
+        const el = $('#ov-timer'); if(el) el.textContent = Math.ceil(s);
+        const fl = $('#ov-tfill'); if(fl) fl.style.width = Math.min(100, s/run.g.dur*100) + '%';
+        if(s > 5.05){ const e2 = $('#ov-timer'); if(e2) e2.classList.remove('low'); }
+      },
       finish(v, delay=0){
         if(!run || run.over) return;
         run.final = v; run.over = true;
