@@ -2609,49 +2609,111 @@ function shade(hex, f){ // f: -1..1 darken/lighten
 const GAMES = [
 
 /* ---- 1. TAP RUSH ---- */
-{ id:'tap', name:'Tap Rush', tag:'Smash the button. It fights back.', dur:15,
-  unit:'taps', lowerBetter:false, fmt:v=>fmtN(v)+' taps',
+{ id:'tap', name:'Tap Rush', tag:'Read the board. Grab the gold. Dodge the bombs.', dur:20,
+  unit:'points', lowerBetter:false, fmt:v=>fmtN(v)+' pts',
   grad:'linear-gradient(160deg,#FF9A5C,#E8412C)',
-  how:'Hit the big button as many times as you can in 15 seconds. It teleports unpredictably — sometimes a hop, sometimes across the arena. Chase it.',
+  how:'Coins pop up and shrink away fast. Tap 🟡 for 1 point and 💎 for 5 — but 💣 costs you 4, so leave it alone. Hit coins back to back without missing and your chain multiplier climbs to ×3. Twenty seconds. Speed matters, but choosing matters more.',
   run(stage, api){
     const arena = document.createElement('div'); arena.className='arena';
     arena.style.background='radial-gradient(700px 420px at 30% 20%, #FF9A5C, transparent 60%), radial-gradient(700px 480px at 80% 90%, #FF4FA0, transparent 55%), #6C2BD9';
+    arena.style.overflow='hidden';
     stage.appendChild(arena);
     const combo = document.createElement('div'); combo.className='combo-tag'; arena.appendChild(combo);
-    const btn = document.createElement('button'); btn.className='tapbtn'; btn.textContent='TAP';
-    let lx = 40, ly = 35;                            // % coords
-    const place = ()=>{ btn.style.left = lx+'%'; btn.style.top = ly+'%'; };
-    place(); arena.appendChild(btn);
-    let taps=0, streak=0, last=0;
-    btn.addEventListener('pointerdown', (e)=>{
-      e.preventDefault();
-      const now = performance.now();
-      streak = (now-last<600) ? streak+1 : 1; last = now;
-      api.add(1); taps++;
-      combo.textContent = streak>=10 ? `🔥 ON FIRE — ${streak} chain` : streak>=5 ? `${streak} chain` : '';
-      combo.style.transform='scale(1.15)'; setTimeout(()=>combo.style.transform='scale(1)',80);
-      sTap();
-      const r = arena.getBoundingClientRect(), b = btn.getBoundingClientRect();
-      const cx = b.left-r.left+85, cy = b.top-r.top+85;
-      burst(arena, cx, cy, '#FFE24B', 6);
-      const rip = document.createElement('div'); rip.className='ripple';
-      rip.style.cssText=`left:${cx-95}px; top:${cy-95}px; width:190px; height:190px`;
-      arena.appendChild(rip); setTimeout(()=>rip.remove(), 520);
-      /* spontaneous movement: 30% stay, 35% small hop, 35% jump far away */
+
+    let chain = 0, mult = 1, alive = [], spawnT = null, tick = null, t0 = performance.now(), dead = false;
+
+    const setCombo = ()=>{
+      combo.textContent = mult > 1 ? `\u26a1 \u00d7${mult} chain \u2014 ${chain} in a row` : (chain >= 2 ? `${chain} in a row` : '');
+      combo.style.transform='scale(1.15)'; setTimeout(()=>{ if(combo) combo.style.transform='scale(1)'; }, 80);
+    };
+    const bumpChain = ()=>{ chain++; mult = chain >= 12 ? 3 : chain >= 6 ? 2 : 1; setCombo(); };
+    const breakChain = ()=>{ if(chain){ chain = 0; mult = 1; setCombo(); } };
+
+    function spawn(){
+      if(dead) return;
+      const el = performance.now() - t0;                 /* ms transcurridos */
+      const p = Math.min(1, el / 20000);                 /* 0 -> 1 conforme avanza */
       const roll = Math.random();
-      if(roll < 0.3){ /* stays put — bait */ }
-      else if(roll < 0.65){
-        lx = clamp(lx + rand(-16,16), 4, 74);
-        ly = clamp(ly + rand(-14,14), 6, 62);
-        place();
-      } else {
-        /* far teleport: force a big move */
-        let nx, ny, guard = 0;
-        do { nx = rand(4,74); ny = rand(6,62); } while(Math.hypot(nx-lx, ny-ly) < 34 && ++guard < 20);
-        lx = nx; ly = ny; place();
-      }
-    });
-    return null;
+      /* las bombas y el oro aparecen más conforme sube la tensión */
+      const kind = roll < (0.10 + 0.14*p) ? 'bomb'
+                 : roll < (0.30 + 0.14*p) ? 'gold'
+                 : 'coin';
+      const size = kind === 'gold' ? 74 : kind === 'bomb' ? 92 : 86;
+      const life = (kind === 'gold' ? 900 : 1250) - 420*p;
+      const d = document.createElement('button');
+      d.type = 'button';
+      d.style.cssText = 'position:absolute; border:0; padding:0; cursor:pointer; border-radius:999px;'
+        + 'width:' + size + 'px; height:' + size + 'px;'
+        + 'left:' + rand(4, 78) + '%; top:' + rand(6, 66) + '%;'
+        + 'display:grid; place-items:center; font-size:' + Math.round(size*0.46) + 'px;'
+        + 'font-weight:900; color:#1A1206; touch-action:manipulation;'
+        + 'box-shadow:0 6px 0 rgba(0,0,0,.35), 0 10px 22px rgba(0,0,0,.35);'
+        + 'transition:transform .09s ease;'
+        + 'background:' + (kind==='gold' ? 'radial-gradient(circle at 34% 28%, #FFF6C2, #FFC53D 62%, #E39400)'
+                          : kind==='bomb' ? 'radial-gradient(circle at 34% 28%, #FF8E8E, #E03B3B 62%, #8E1414)'
+                          : 'radial-gradient(circle at 34% 28%, #EFFFB9, #D6F24B 62%, #96B510)') + ';';
+      d.textContent = kind==='gold' ? '\ud83d\udc8e' : kind==='bomb' ? '\ud83d\udca3' : '\ud83e\ude99';
+      const o = { el:d, kind, born: performance.now(), life, gone:false };
+      d.addEventListener('pointerdown', ev=>{
+        ev.preventDefault(); ev.stopPropagation();
+        if(o.gone || dead) return;
+        o.gone = true;
+        const r = arena.getBoundingClientRect(), b = d.getBoundingClientRect();
+        const cx = b.left - r.left + b.width/2, cy = b.top - r.top + b.height/2;
+        if(kind === 'bomb'){
+          api.add(-4); breakChain(); sBad();
+          burst(arena, cx, cy, '#FF6B6B', 10);
+          flashArena('#FF4D4D');
+        } else {
+          const val = (kind==='gold' ? 5 : 1) * mult;
+          api.add(val); bumpChain(); sTap();
+          burst(arena, cx, cy, kind==='gold' ? '#FFD84B' : '#E1FE38', kind==='gold' ? 12 : 6);
+          floatPt(arena, cx, cy, '+' + val, kind==='gold' ? '#FFD84B' : '#E1FE38', kind==='gold' ? 30 : 22);
+          const rip = document.createElement('div'); rip.className='ripple';
+          rip.style.cssText = 'left:' + (cx-90) + 'px; top:' + (cy-90) + 'px; width:180px; height:180px';
+          arena.appendChild(rip); setTimeout(()=> rip.remove(), 520);
+        }
+        d.remove();
+        alive = alive.filter(x=> x !== o);
+      });
+      arena.appendChild(d);
+      alive.push(o);
+      /* el ritmo se acelera: de una cada 520 ms a una cada 230 ms */
+      spawnT = setTimeout(spawn, 520 - 290*p + rand(-60, 60));
+    }
+
+    function flashArena(col){
+      const f = document.createElement('div');
+      f.style.cssText = 'position:absolute; inset:0; pointer-events:none; background:' + col + '; opacity:.30; transition:opacity .28s';
+      arena.appendChild(f);
+      requestAnimationFrame(()=>{ f.style.opacity = '0'; });
+      setTimeout(()=> f.remove(), 320);
+    }
+
+    tick = setInterval(()=>{
+      if(dead) return;
+      const now = performance.now();
+      alive.slice().forEach(o=>{
+        const age = now - o.born;
+        const k = age / o.life;
+        if(k >= 1){
+          o.gone = true; o.el.remove();
+          alive = alive.filter(x=> x !== o);
+          if(o.kind !== 'bomb') breakChain();      /* dejar ir una moneda rompe la cadena */
+          return;
+        }
+        o.el.style.transform = 'scale(' + (1 - 0.45*k) + ')';
+        o.el.style.opacity = String(1 - 0.35*k);
+      });
+    }, 40);
+
+    spawn();
+    return ()=>{
+      dead = true;
+      clearTimeout(spawnT); clearInterval(tick);
+      alive.forEach(o=>{ try{ o.el.remove(); }catch(e){} });
+      alive = [];
+    };
   }
 },
 
@@ -4709,20 +4771,26 @@ const GAMES = [
     function rowFor(r){
       if(rows[r]) return rows[r];
       let type = 'grass';
-      if(r >= 3){
-        const prev = rows[r-1] ? rows[r-1].type : 'grass';
-        type = Math.random() < (prev==='road' ? 0.78 : 0.88) ? 'road' : 'grass';
+      if(r >= 6){
+        const p1 = rows[r-1] ? rows[r-1].type : 'grass';
+        const p2 = rows[r-2] ? rows[r-2].type : 'grass';
+        /* nunca dos calles seguidas después de una: siempre hay dónde respirar.
+           Con ~28% de calles, la mayoría de los pasos son gratis. */
+        if(p1==='road' && p2==='road') type = 'grass';
+        else type = Math.random() < (p1==='road' ? 0.14 : 0.34) ? 'road' : 'grass';
       }
       const row = {type, deco:[]};
       if(type==='grass'){
         for(let i=0;i<3;i++) if(Math.random()<0.4) row.deco.push({x:rand(30,W-30), s:rand(0.7,1.15)});
       } else {
         row.dir = Math.random()<0.5 ? 1 : -1;
-        row.speed = rand(70, 125) + Math.min(70, r*1.6);
-        row.carW = randi(74, 96);
+        /* lentos y con rampa muy suave: la dificultad sube, pero siempre se lee */
+        row.speed = rand(32, 56) + Math.min(24, r*0.30);
+        row.carW = randi(52, 66);
         row.cars = [];
-        const gap = rand(215, 330);
-        for(let x = -120; x < W+140; x += gap + rand(-30,50)) row.cars.push({x, col: CARCOLS[randi(0,CARCOLS.length-1)]});
+        /* huecos amplios: siempre hay una ventana clara para cruzar */
+        const gap = rand(560, 820);
+        for(let x = -120; x < W+160; x += gap + rand(-25,45)) row.cars.push({x, col: CARCOLS[randi(0,CARCOLS.length-1)]});
       }
       rows[r] = row;
       return row;
@@ -4797,7 +4865,7 @@ const GAMES = [
       const dt = Math.min(0.05,(now-lastT)/1000); lastT = now;
       /* advance hop */
       if(hop){
-        hop.t += dt/0.15;
+        hop.t += dt/0.11;
         if(hop.t >= 1){
           px = hop.tx; pr = hop.tr; hop = null;
           if(pr > maxR){ maxR = pr; api.set(maxR); }
@@ -4818,7 +4886,7 @@ const GAMES = [
         const cy = hop && hop.t>0.5 ? hop.tr : pr;
         const cx = hop ? hop.fx + (hop.tx-hop.fx)*hop.t : px;
         const row = rowFor(cy);
-        if(row.type==='road' && row.cars.some(c=> Math.abs(c.x-cx) < row.carW/2 + 13)) die();
+        if(row.type==='road' && row.cars.some(c=> Math.abs(c.x-cx) < row.carW/2 + 8)) die();
       }
       camY += ((pr*RH) - camY)*Math.min(1, dt*6);
       const yOf = r => H - 90 - (r*RH - camY);
