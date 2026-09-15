@@ -5258,7 +5258,7 @@ const GAMES = [
 { id:'oddcoin', name:'Odd Coin Out', tag:'One coin is a shade off. Find it.', dur:30, tie:true,
   unit:'coins', lowerBetter:false, fmt:v=>v+' spotted',
   grad:'linear-gradient(160deg,#FF4FA0,#93195E)',
-  how:'Freshly minted coins, all identical — except one came out a shade off. Tap the impostor.\n\nIt starts easy with just 4 coins. Keep finding them and the mint keeps adding: 4 → 9 → 16 → 36. The colour difference also shrinks as you go, so late rounds are a big board AND a tiny difference.\n\nA wrong tap freezes you for 1.5 seconds. Thirty seconds on the clock.',
+  how:'Freshly minted coins, all identical — except one came out a shade off. Tap the impostor.\n\nIt starts easy with just 4 coins. Keep finding them and the mint keeps adding: 4 → 9 → 16 → 36.\n\nEvery time the board grows the colour difference RESETS to something easy to spot, then tightens as you keep going. The challenge is covering more ground with your eyes, not staring at two shades that look identical.\n\nA wrong tap freezes you for 1.5 seconds. Thirty seconds on the clock.',
   run(stage, api){
     const arena = document.createElement('div'); arena.className='arena';
     arena.style.background='radial-gradient(720px 480px at 50% 18%, #C2277A, #6B1145 78%)';
@@ -5266,13 +5266,19 @@ const GAMES = [
     let found = 0, frozen = false;
     function grid(){
       if(!arena.isConnected) return;
-      /* la escalera: empieza con 4 monedas y va creciendo hasta 36 */
-      const n = found>=18 ? 36 : found>=11 ? 16 : found>=5 ? 9 : 4;
-      const cols = n===4 ? 2 : n===9 ? 3 : n===16 ? 4 : 6;
+      /* la escalera: 4 → 9 → 16 → 36 monedas */
+      const CUT = [0, 5, 12, 20];
+      const step = found >= CUT[3] ? 3 : found >= CUT[2] ? 2 : found >= CUT[1] ? 1 : 0;
+      const n = [4, 9, 16, 36][step];
+      const cols = [2, 3, 4, 6][step];
       const H0 = randi(0,359), S = randi(68,88), L = randi(44,60);
-      /* la diferencia se cierra despacio: el reto crece por el tamaño del tablero,
-         no solo porque el color sea imposible de ver */
-      const delta = Math.max(3.2, 18 - found*1.05) * (Math.random()<.5 ? -1 : 1);
+      /* Cada vez que el tablero crece, el color vuelve a ser fácil y se va cerrando
+         despacio dentro de ese tamaño. Así el reto viene de barrer más monedas con
+         la vista, no de un color imposible desde el minuto dos. */
+      const BASE  = [26, 23, 20, 17][step];
+      const FLOOR = [14, 11,  8,  6][step];
+      const within = found - CUT[step];
+      const delta = Math.max(FLOOR, BASE - within*1.15) * (Math.random()<.5 ? -1 : 1);
       const odd = randi(0,n-1);
       const size = n===4 ? 118 : n===9 ? 96 : n===16 ? 74 : 52;
       let html = `<div style="display:grid;grid-template-columns:repeat(${cols},${size}px);gap:14px;justify-content:center;align-content:center;height:100%">`;
