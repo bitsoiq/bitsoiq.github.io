@@ -5258,7 +5258,7 @@ const GAMES = [
 { id:'oddcoin', name:'Odd Coin Out', tag:'One coin is a shade off. Find it.', dur:30, tie:true,
   unit:'coins', lowerBetter:false, fmt:v=>v+' spotted',
   grad:'linear-gradient(160deg,#FF4FA0,#93195E)',
-  how:'Freshly minted coins, all identical — except one came out a shade off. Tap the impostor.\n\nIt starts easy with just 4 coins. Keep finding them and the mint keeps adding: 4 → 9 → 16 → 36.\n\nEvery time the board grows the colour difference RESETS to something easy to spot, then tightens as you keep going. The challenge is covering more ground with your eyes, not staring at two shades that look identical.\n\nA wrong tap freezes you for 1.5 seconds. Thirty seconds on the clock.',
+  how:'Freshly minted coins, all identical — except one came out a shade off. Tap the impostor.\n\nIt starts easy with just 4 coins. Keep finding them and the mint keeps adding: 4 → 9 → 16 → 36.\n\nThe colour difference tightens very gradually the whole way through — never a sudden jump, just a shade less obvious with every catch. The early rounds are generous on purpose; the real squeeze only arrives if you get deep.\n\nA wrong tap freezes you for 1.5 seconds. Thirty seconds on the clock.',
   run(stage, api){
     const arena = document.createElement('div'); arena.className='arena';
     arena.style.background='radial-gradient(720px 480px at 50% 18%, #C2277A, #6B1145 78%)';
@@ -5272,13 +5272,12 @@ const GAMES = [
       const n = [4, 9, 16, 36][step];
       const cols = [2, 3, 4, 6][step];
       const H0 = randi(0,359), S = randi(68,88), L = randi(44,60);
-      /* Cada vez que el tablero crece, el color vuelve a ser fácil y se va cerrando
-         despacio dentro de ese tamaño. Así el reto viene de barrer más monedas con
-         la vista, no de un color imposible desde el minuto dos. */
-      const BASE  = [26, 23, 20, 17][step];
-      const FLOOR = [14, 11,  8,  6][step];
-      const within = found - CUT[step];
-      const delta = Math.max(FLOOR, BASE - within*1.15) * (Math.random()<.5 ? -1 : 1);
+      /* El color se cierra de forma gradual y continua: nunca se reinicia ni pega
+         saltos. Arranca en 26 (obvio) y baja poco a poquito hasta 6 (muy sutil)
+         alrededor del acierto 44. La curva es convexa, así que los primeros
+         aciertos casi no aprietan y el apretón de verdad llega al final. */
+      const dif = 6 + 20 * Math.pow(1 - Math.min(1, found/44), 1.25);
+      const delta = dif * (Math.random()<.5 ? -1 : 1);
       const odd = randi(0,n-1);
       const size = n===4 ? 118 : n===9 ? 96 : n===16 ? 74 : 52;
       let html = `<div style="display:grid;grid-template-columns:repeat(${cols},${size}px);gap:14px;justify-content:center;align-content:center;height:100%">`;
