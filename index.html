@@ -5092,7 +5092,7 @@ const GAMES = [
     const fill = arena.querySelector('#bk-fill'), msg = arena.querySelector('#bk-msg'), rl = arena.querySelector('#bk-round');
     function startRound(){
       rl.textContent = `ROUND ${ri+1} OF 5 — ${ROUNDS[ri].label}`;
-      msg.textContent = 'Watch it drain…'; msg.style.color = '#E1FE38';
+      msg.textContent = 'Watch it drain…'; msg.style.color = 'rgba(255,255,255,.8)';
       fill.style.opacity = 1; fill.style.height = '100%';
       phase = 'drain'; t0 = performance.now();
       sfx(520,.08,'sine',.1);
@@ -5120,15 +5120,23 @@ const GAMES = [
       phase = 'between'; cancelAnimationFrame(raf);
       fill.style.opacity = .35;
       fill.style.height = Math.max(0, (1-el/R.dur)*100)+'%';
-      msg.textContent = `${err} ms off ${early?'(early)':'(late)'} — both count the same`;
-      msg.style.color = err<90 ? '#3DDC64' : err<250 ? '#FFD449' : '#FF5A5F';
-      if(err<90) sGood(); else if(err<250) sTap(); else sBad();
+      /* Blink no juzga: no hay acierto ni error, solo qué tan cerca quedaste.
+         Un solo tono neutro y un solo color para todos los resultados. */
+      const cerca = err < 90 ? 'Right on it' : err < 250 ? 'Close' : err < 600 ? 'A bit off' : 'Way off';
+      msg.textContent = `${cerca} — ${err} ms ${early ? 'too early' : 'too late'}`;
+      msg.style.color = 'rgba(255,255,255,.88)';
+      sfx(440, .07, 'sine', .07);
       const avg = Math.round(errs.reduce((a,b)=>a+b,0)/errs.length);
       api.set(avg);
       ri++;
       if(ri>=ROUNDS.length){
         phase='done';
-        timers.push(setTimeout(()=> api.finish(avg, 500), 1100));
+        timers.push(setTimeout(()=>{
+          rl.textContent = 'ALL FIVE ROUNDS DONE';
+          msg.textContent = `Your average was ${avg} ms`;
+          msg.style.color = 'rgba(255,255,255,.95)';
+        }, 700));
+        timers.push(setTimeout(()=> api.finish(avg, 500), 1900));
       } else {
         timers.push(setTimeout(startRound, 1500));
       }
