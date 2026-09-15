@@ -3589,10 +3589,10 @@ const GAMES = [
 },
 
 /* ---- 13. CENTER HIT — 5 taps, average accuracy, FAST ---- */
-{ id:'center', name:'Center Hit', tag:'Nail the center. Five times.', dur:0,
-  unit:'accuracy', lowerBetter:false, fmt:v=>v+'%', hudFmt:v=>v+'%',
+{ id:'center', name:'Center Hit', tag:'Nail the center. Five times, then once more.', dur:0,
+  unit:'accuracy', lowerBetter:false, fmt:v=>(+v).toFixed(3)+'%', hudFmt:v=>(+v).toFixed(3)+'%',
   grad:'linear-gradient(160deg,#2A2550,#191636)',
-  how:'A needle whips left and right across a horizontal bar — tap (or press Space) exactly when it crosses the green center. The thin white line in the middle of the green is the bullseye: nail it and that tap scores a perfect 100%. It gets faster after every tap, 5 taps total. Your final score is your average accuracy.',
+  how:'A needle whips left and right across a horizontal bar — tap (or press Space) exactly when it crosses the green center. The thin white line in the middle is the bullseye.\n\nFive taps, and the needle speeds up after every one. Your score is your average accuracy, measured to three decimals (97.985%), so almost nobody lands on the same number.\n\nThen comes a SIXTH tap, faster than all the rest. It does not change your score — it is the tiebreaker. If two people finish with the same average, the one who nailed the sixth tap closer to the bullseye wins the day.',
   run(stage, api){
     const {cv, ctx, W, H} = makeCanvas(stage, 900, 540);
     const BW = 620, BH2 = 92, BX = (W-BW)/2, BY = H*0.55;
@@ -3601,16 +3601,29 @@ const GAMES = [
     function tap(){
       if(done) return;
       let acc = Math.max(0, 100 - Math.abs(p-0.5)*200);
-      if(Math.abs(p-0.5) < 0.008) acc = 100;   /* white center line = perfect */
-      acc = Math.round(acc*100)/100;
-      taps.push(acc); marks.push({p, acc});
-      const avg = Math.round(taps.reduce((a,b)=>a+b,0)/taps.length*100)/100;
-      api.set(avg);
+      if(Math.abs(p-0.5) < 0.0015) acc = 100;            /* clavar la línea blanca = perfecto */
+      acc = Math.round(acc*1000)/1000;                    /* tres decimales: casi nadie repite número */
       flashA = 1;
       (acc>=90 ? sGood : sTap)();
-      floatPt(stage, stage.clientWidth/2-30, stage.clientHeight*0.3, acc===100 ? '💯 PERFECT' : acc.toFixed(1)+'%', acc>=90?'#3DDC64':acc>=60?'#FFD449':'#FF5A5F');
+      marks.push({p, acc});
+      if(taps.length >= 5){
+        /* SEXTO TIRO: no suma al puntaje, solo rompe empates (menos distancia = mejor) */
+        done = true;
+        const off = Math.round(Math.abs(p-0.5)*200*1000);  /* milésimas de % fuera del centro */
+        try{ api.tieBreak(off); }catch(e){}
+        floatPt(stage, stage.clientWidth/2-30, stage.clientHeight*0.3,
+          '🎯 TIEBREAK ' + acc.toFixed(3) + '%', acc>=90?'#3DDC64':acc>=60?'#FFD449':'#FF5A5F');
+        const avgF = Math.round(taps.reduce((a,b)=>a+b,0)/taps.length*1000)/1000;
+        api.set(avgF);
+        api.finish(avgF, 1100);
+        return;
+      }
+      taps.push(acc);
+      const avg = Math.round(taps.reduce((a,b)=>a+b,0)/taps.length*1000)/1000;
+      api.set(avg);
+      floatPt(stage, stage.clientWidth/2-30, stage.clientHeight*0.3, acc===100 ? '💯 PERFECT' : acc.toFixed(3)+'%', acc>=90?'#3DDC64':acc>=60?'#FFD449':'#FF5A5F');
       v += 0.45;
-      if(taps.length === 5){ done = true; api.finish(avg, 900); }
+      if(taps.length === 5) v += 0.95;                    /* el sexto va mucho más rápido */
     }
     const onKey = e=>{ if(e.code==='Space'){ e.preventDefault(); tap(); } };
     cv.addEventListener('pointerdown', tap);
@@ -3626,7 +3639,7 @@ const GAMES = [
       ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
       ctx.fillStyle = 'rgba(255,255,255,.8)';
       ctx.font = '900 22px sans-serif'; ctx.textAlign = 'center';
-      ctx.fillText(`Tap ${Math.min(taps.length+1,5)} of 5`, W/2, 70);
+      ctx.fillText(taps.length >= 5 ? '🎯 TIEBREAKER — sixth tap, fastest of all' : `Tap ${taps.length+1} of 5`, W/2, 70);
       /* horizontal bar, dead level */
       const zones = [[0,.12,'#E23A3A'],[.12,.3,'#FFB020'],[.3,.44,'#FFE24B'],[.44,.56,'#3DDC64'],[.56,.7,'#FFE24B'],[.7,.88,'#FFB020'],[.88,1,'#E23A3A']];
       roundRect(ctx, BX, BY-BH2/2, BW, BH2, 22); ctx.save(); ctx.clip();
@@ -4716,7 +4729,7 @@ const GAMES = [
 { id:'blink', name:'Blink', tag:'The bar hides. Your clock doesn\'t.', dur:0,
   unit:'ms off', lowerBetter:true, fmt:v=>v+' ms', hudFmt:v=>v+' ms',
   grad:'linear-gradient(160deg,#1E2A55,#10142E)',
-  how:'A tank of liquid drains — but partway down it turns INVISIBLE while it keeps draining. Tap the exact instant you think it hits empty. Three VERY different rounds: a lightning sprint, a normal pour and a painfully slow marathon. Your score is your average error in milliseconds (early or late both count) — lowest wins.',
+  how:'A tank of liquid drains — but partway down it turns INVISIBLE while it keeps draining. Tap the exact instant you think it hits empty.\n\nFIVE rounds, all at different speeds: two sprints, a cruise, a slow pour and a marathon. Same rules, wildly different timing.\n\nEARLY AND LATE COUNT THE SAME. Tapping 200 ms too soon and 200 ms too late both score 200. There is no safe side — aim for zero, not for \'a bit late just in case\'.\n\nYour score is your average error across the five rounds. Lowest wins.',
   run(stage, api){
     const arena = document.createElement('div'); arena.className='arena';
     arena.style.background='radial-gradient(700px 500px at 50% 25%, #1E2A55, #10142E 80%)';
@@ -4724,7 +4737,7 @@ const GAMES = [
     stage.appendChild(arena);
     arena.innerHTML = `
       <div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px">
-        <div id="bk-round" style="font-weight:900; font-size:16px; letter-spacing:1px; color:rgba(255,255,255,.75)">ROUND 1 OF 3</div>
+        <div id="bk-round" style="font-weight:900; font-size:16px; letter-spacing:1px; color:rgba(255,255,255,.75)">ROUND 1 OF 5</div>
         <div style="position:relative; width:132px; height:min(52vh,330px); border-radius:20px; background:rgba(255,255,255,.06); border:3px solid rgba(255,255,255,.28); overflow:hidden">
           <div id="bk-fill" style="position:absolute; left:0; right:0; bottom:0; height:100%; background:linear-gradient(180deg,#7FF3F8,#00C2CB); transition:opacity .18s"></div>
         </div>
@@ -4732,15 +4745,17 @@ const GAMES = [
       </div>`;
     /* three wildly different paces — sprint, cruise, marathon */
     const ROUNDS = shuffle([
-      {dur:Math.round(1400*rand(.78,1.3)), hide:rand(.58,.72), label:'⚡ SPRINT'},
-      {dur:Math.round(3600*rand(.8,1.28)),  hide:rand(.4,.56),  label:'🌊 CRUISE'},
-      {dur:Math.round(7500*rand(.82,1.22)), hide:rand(.24,.36), label:'🐢 MARATHON'}
+      {dur:Math.round(1100*rand(.80,1.25)), hide:rand(.60,.76), label:'⚡ FLASH'},
+      {dur:Math.round(2000*rand(.80,1.25)), hide:rand(.55,.70), label:'⚡ SPRINT'},
+      {dur:Math.round(3600*rand(.80,1.28)), hide:rand(.40,.56), label:'🌊 CRUISE'},
+      {dur:Math.round(5400*rand(.82,1.24)), hide:rand(.32,.46), label:'🫗 SLOW POUR'},
+      {dur:Math.round(8200*rand(.82,1.22)), hide:rand(.22,.34), label:'🐢 MARATHON'}
     ]);
     let ri = 0, phase = 'wait', t0 = 0, raf = 0;
     const errs = [], timers = [];
     const fill = arena.querySelector('#bk-fill'), msg = arena.querySelector('#bk-msg'), rl = arena.querySelector('#bk-round');
     function startRound(){
-      rl.textContent = `ROUND ${ri+1} OF 3 — ${ROUNDS[ri].label}`;
+      rl.textContent = `ROUND ${ri+1} OF 5 — ${ROUNDS[ri].label}`;
       msg.textContent = 'Watch it drain…'; msg.style.color = '#E1FE38';
       fill.style.opacity = 1; fill.style.height = '100%';
       phase = 'drain'; t0 = performance.now();
@@ -4769,13 +4784,13 @@ const GAMES = [
       phase = 'between'; cancelAnimationFrame(raf);
       fill.style.opacity = .35;
       fill.style.height = Math.max(0, (1-el/R.dur)*100)+'%';
-      msg.textContent = `${early?'−':'+'}${err} ms ${early?'(early)':'(late)'}`;
+      msg.textContent = `${err} ms off ${early?'(early)':'(late)'} — both count the same`;
       msg.style.color = err<90 ? '#3DDC64' : err<250 ? '#FFD449' : '#FF5A5F';
       if(err<90) sGood(); else if(err<250) sTap(); else sBad();
       const avg = Math.round(errs.reduce((a,b)=>a+b,0)/errs.length);
       api.set(avg);
       ri++;
-      if(ri>=3){
+      if(ri>=ROUNDS.length){
         phase='done';
         timers.push(setTimeout(()=> api.finish(avg, 500), 1100));
       } else {
@@ -4899,7 +4914,7 @@ const GAMES = [
 { id:'oddcoin', name:'Odd Coin Out', tag:'One coin is a shade off. Find it.', dur:30, tie:true,
   unit:'coins', lowerBetter:false, fmt:v=>v+' spotted',
   grad:'linear-gradient(160deg,#FF4FA0,#93195E)',
-  how:'Nine freshly minted coins, identical — except one came out a shade off. Tap the impostor. Every catch shrinks the difference until it\'s nearly invisible, and later the mint adds extra coins. A wrong tap freezes you for 1.5 seconds. 30 on the clock.',
+  how:'Freshly minted coins, all identical — except one came out a shade off. Tap the impostor.\n\nIt starts easy with just 4 coins. Keep finding them and the mint keeps adding: 4 → 9 → 16 → 36. The colour difference also shrinks as you go, so late rounds are a big board AND a tiny difference.\n\nA wrong tap freezes you for 1.5 seconds. Thirty seconds on the clock.',
   run(stage, api){
     const arena = document.createElement('div'); arena.className='arena';
     arena.style.background='radial-gradient(720px 480px at 50% 18%, #C2277A, #6B1145 78%)';
@@ -4907,12 +4922,15 @@ const GAMES = [
     let found = 0, frozen = false;
     function grid(){
       if(!arena.isConnected) return;
-      const n = found>=14 ? 16 : found>=8 ? 12 : 9;
-      const cols = n===9 ? 3 : 4;
+      /* la escalera: empieza con 4 monedas y va creciendo hasta 36 */
+      const n = found>=18 ? 36 : found>=11 ? 16 : found>=5 ? 9 : 4;
+      const cols = n===4 ? 2 : n===9 ? 3 : n===16 ? 4 : 6;
       const H0 = randi(0,359), S = randi(68,88), L = randi(44,60);
-      const delta = Math.max(2.6, 17 - found*1.35) * (Math.random()<.5 ? -1 : 1);
+      /* la diferencia se cierra despacio: el reto crece por el tamaño del tablero,
+         no solo porque el color sea imposible de ver */
+      const delta = Math.max(3.2, 18 - found*1.05) * (Math.random()<.5 ? -1 : 1);
       const odd = randi(0,n-1);
-      const size = n===9 ? 96 : 76;
+      const size = n===4 ? 118 : n===9 ? 96 : n===16 ? 74 : 52;
       let html = `<div style="display:grid;grid-template-columns:repeat(${cols},${size}px);gap:14px;justify-content:center;align-content:center;height:100%">`;
       for(let i=0;i<n;i++){
         const Li = i===odd ? clamp(L+delta,8,92) : L;
@@ -5903,6 +5921,10 @@ function beginGame(gid, mode, isRetry){
       set(v){ if(!run || run.over) return; run.score = Math.max(0,v); hud(run.score); },
       get score(){ return run ? run.score : 0; },
       timeLeft(){ return run ? run.tLeft : 0; },
+      tieBreak(v){
+        if(!run) return;
+        run.tbVal = Math.max(0, Math.round(v));
+      },
       addTime(v){
         if(!run || run.over || !run.timed) return;
         run.tLeft = Math.max(0, run.tLeft + v);
