@@ -2277,10 +2277,10 @@ function shade(hex, f){ // f: -1..1 darken/lighten
 const GAMES = [
 
 /* ---- 1. TAP RUSH ---- */
-{ id:'tap', name:'Tap Rush', tag:'Read the board. Grab the gold. Dodge the bombs.', dur:20,
+{ id:'tap', name:'Tap Rush', tag:'Read the board. Grab the gold. Dodge the bombs.', dur:30,
   unit:'points', lowerBetter:false, fmt:v=>fmtN(v)+' pts',
   grad:'linear-gradient(160deg,#FF9A5C,#E8412C)',
-  how:'Coins pop up and shrink away fast. Tap 🟡 for 1 point and 💎 for 5 — but 💣 costs you 4, so leave it alone. Hit coins back to back without missing and your chain multiplier climbs to ×3. Twenty seconds. Speed matters, but choosing matters more.',
+  how:'Targets pop up all over the board and shrink away in about a second. Thirty seconds on the clock.\n\n🪙 COIN — tap it. +1 point.\n💎 DIAMOND — tap it. +5 points, but it is smaller and disappears faster.\n💣 BOMB — do NOT tap it. It costs you 4 points.\n\nCHAIN MULTIPLIER: hit 6 in a row without a mistake and everything is worth ×2. Hit 12 in a row and it climbs to ×3. Tapping a bomb or letting a coin expire resets you to ×1.\n\nThe board speeds up and the bombs get more frequent as the clock runs down. Fast fingers help, but picking the right target is what wins it.',
   run(stage, api){
     const arena = document.createElement('div'); arena.className='arena';
     arena.style.background='radial-gradient(700px 420px at 30% 20%, #FF9A5C, transparent 60%), radial-gradient(700px 480px at 80% 90%, #FF4FA0, transparent 55%), #6C2BD9';
@@ -2300,7 +2300,7 @@ const GAMES = [
     function spawn(){
       if(dead) return;
       const el = performance.now() - t0;                 /* ms transcurridos */
-      const p = Math.min(1, el / 20000);                 /* 0 -> 1 conforme avanza */
+      const p = Math.min(1, el / 30000);                 /* 0 -> 1 conforme avanza */
       const roll = Math.random();
       /* las bombas y el oro aparecen más conforme sube la tensión */
       const kind = roll < (0.10 + 0.14*p) ? 'bomb'
@@ -4439,21 +4439,21 @@ const GAMES = [
     function rowFor(r){
       if(rows[r]) return rows[r];
       let type = 'grass';
-      if(r >= 6){
+      if(r >= 5){
         const p1 = rows[r-1] ? rows[r-1].type : 'grass';
         const p2 = rows[r-2] ? rows[r-2].type : 'grass';
         if(p1==='road' && p2==='road') type = 'grass';
-        else type = Math.random() < (p1==='road' ? 0.14 : 0.34) ? 'road' : 'grass';
+        else type = Math.random() < (p1==='road' ? 0.24 : 0.50) ? 'road' : 'grass';
       }
       const row = {type, deco:[]};
       if(type==='grass'){
         for(let i=0;i<3;i++) if(Math.random()<0.4) row.deco.push({x:rand(30,W-30), s:rand(0.7,1.15)});
       } else {
         row.dir = Math.random()<0.5 ? 1 : -1;
-        row.speed = rand(32, 56) + Math.min(24, r*0.30);
-        row.carW = randi(52, 66);
+        row.speed = rand(42, 72) + Math.min(34, r*0.50);
+        row.carW = randi(58, 74);
         row.cars = [];
-        const gap = rand(560, 820);
+        const gap = rand(430, 620);
         for(let x = -120; x < W+160; x += gap + rand(-25,45)) row.cars.push({x, col: CARCOLS[randi(0,CARCOLS.length-1)]});
       }
       rows[r] = row;
@@ -4529,7 +4529,7 @@ const GAMES = [
       const dt = Math.min(0.05,(now-lastT)/1000); lastT = now;
       /* advance hop */
       if(hop){
-        hop.t += dt/0.11;
+        hop.t += dt/0.12;
         if(hop.t >= 1){
           px = hop.tx; pr = hop.tr; hop = null;
           if(pr > maxR){ maxR = pr; api.set(maxR); }
@@ -4550,7 +4550,7 @@ const GAMES = [
         const cy = hop && hop.t>0.5 ? hop.tr : pr;
         const cx = hop ? hop.fx + (hop.tx-hop.fx)*hop.t : px;
         const row = rowFor(cy);
-        if(row.type==='road' && row.cars.some(c=> Math.abs(c.x-cx) < row.carW/2 + 8)) die();
+        if(row.type==='road' && row.cars.some(c=> Math.abs(c.x-cx) < row.carW/2 + 10)) die();
       }
       camY += ((pr*RH) - camY)*Math.min(1, dt*6);
       const yOf = r => H - 90 - (r*RH - camY);
@@ -4899,7 +4899,7 @@ const GAMES = [
 { id:'snake', name:'Chain Snake', tag:'Every coin grows the chain — and the danger.', dur:0, tie:true,
   unit:'coins', lowerBetter:false, fmt:v=>fmtN(v)+' coins',
   grad:'linear-gradient(160deg,#3DDC64,#0E5A2B)',
-  how:'Snake, Bitso edition. Steer the chain with arrows / WASD (swipe on mobile) and eat coins: each one adds a block to your chain, speeds it up — and drops a new ❌ on the board. Wall, ❌ or your own tail ends the run.',
+  how:'Snake, Bitso edition. Steer the chain with the arrow keys / WASD, or swipe on mobile.\n\nEat coins 🪙 — each one adds a block to your chain, makes you faster, and drops a new ❌ on the board.\n\nWalls are NOT deadly: run off one edge and you reappear on the opposite side. Use it — wrapping around is often the fastest way out of a tight spot.\n\nYou only die by hitting an ❌ or your own chain. The longer you get, the less room you leave yourself.',
   run(stage, api){
     const CW = 26, CH = 18, CELL = 28;
     const {cv, ctx, W, H} = makeCanvas(stage, CW*CELL, CH*CELL);
@@ -4944,7 +4944,11 @@ const GAMES = [
     function step(){
       if(queue.length) dir = queue.shift();
       const h = {x:snake[0].x+dir.x, y:snake[0].y+dir.y};
-      if(h.x<0 || h.y<0 || h.x>=CW || h.y>=CH) return die();
+      /* las paredes NO matan: sales por un lado y entras por el otro */
+      if(h.x < 0)   h.x = CW - 1;
+      if(h.y < 0)   h.y = CH - 1;
+      if(h.x >= CW) h.x = 0;
+      if(h.y >= CH) h.y = 0;
       if(xs.some(s=> s.x===h.x && s.y===h.y)) return die();
       const eats = coin && h.x===coin.x && h.y===coin.y;
       if(snake.some((s,i)=> i < snake.length-(eats?0:1) && s.x===h.x && s.y===h.y)) return die();
