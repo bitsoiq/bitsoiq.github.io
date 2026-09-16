@@ -2242,6 +2242,20 @@ async function cloudPull(){
     try{
       (state.tournaments||[]).forEach(t=>{ const k = tKey(t); if(k && dkeys.indexOf(k) < 0) dkeys.push(k); });
     }catch(e){}
+    /* En la PRIMERA consulta de la sesión pedimos todos los días de juego que
+       ya pasaron. Si no, el tablero de los días anteriores sale vacío y parece
+       que se perdieron los puntos (no se perdieron: no se habían pedido). */
+    const primeraVez = !CLOUD.m._boot;
+    if(primeraVez){
+      try{
+        (state.tournaments||[]).forEach(t=>{
+          const hoy = tKey(t);
+          (t.days||[]).forEach(d=>{
+            if(d && d.gameId && d.date <= hoy && dkeys.indexOf(d.date) < 0) dkeys.push(d.date);
+          });
+        });
+      }catch(e){}
+    }
     /* SOLO LO NUEVO: pedimos las filas modificadas desde la última vez.
        Cada resultado viaja UNA vez en lugar de re-descargar el board entero cada tick. */
     /* PRIMERA VUELTA DE CADA SESIÓN: pedimos el tablero de HOY completo, por fecha.
@@ -8114,7 +8128,33 @@ function pointsTodayHTML(t){
   return html;
 }
 let pointsDayOpen = null;
-function pointsDayToggle(d){ pointsDayOpen = pointsDayOpen === d ? null : d; const t = curT(); if(t) renderSide(t); sTap(); }
+async function pointsDayToggle(d){
+  pointsDayOpen = pointsDayOpen === d ? null : d;
+  const t = curT(); if(t) renderSide(t); sTap();
+  /* Si ese día no tiene datos en este dispositivo, los pedimos a la nube.
+     Los puntos nunca se pierden: puede que este navegador simplemente
+     no los haya descargado todavía. */
+  if(pointsDayOpen && t && CLOUD.on){
+    const hay = (t.results||[]).some(r=> r.date===pointsDayOpen && r.value!=null);
+    if(!hay){
+      try{
+        const r = await cfetch('results?select=*&date=eq.' + encodeURIComponent(pointsDayOpen));
+        if(r && r.ok){
+          const filas = await r.json();
+          let nuevos = 0;
+          (Array.isArray(filas)?filas:[]).forEach(x=>{
+            if(!x || !x.data) return;
+            const tt = (state.tournaments||[]).find(y=> y.id===x.tid); if(!tt) return;
+            tt.results = tt.results || [];
+            const i = tt.results.findIndex(y=> y.date===x.date && y.name===x.name);
+            if(i>=0) tt.results[i] = hydrateRow(x.data, tt.results[i]); else { tt.results.push(hydrateRow(x.data)); nuevos++; }
+          });
+          if(nuevos){ saveState(); renderSide(curT() || t); }
+        }
+      }catch(e){}
+    }
+  }
+}
 function pointsDaysHTML(t){
   const today = tKey(t);
   const gds = (t.days||[]).filter(d=> d.gameId && d.date <= today).reverse();
