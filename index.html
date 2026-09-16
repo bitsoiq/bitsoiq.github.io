@@ -6925,10 +6925,16 @@ function basePts(rank, N){
      entrar los 21 días le compite a jugar la mitad y quedar arriba.
      ============================================================ */
   if(N <= 1) return 125;
-  const frac = (N - rank) / (N - 1);            /* 1 = primero · 0 = último */
+  /* El lugar SIEMPRE se mantiene dentro del campo. Sin esto, alguien de Keep Up
+     que queda debajo de todos recibía el lugar N+1, la fracción se volvía
+     negativa y Math.pow devolvía NaN: sus puntos desaparecían y le contaminaban
+     el total del torneo. */
+  const r = Math.min(Math.max(1, rank), N);
+  const frac = Math.max(0, Math.min(1, (N - r) / (N - 1)));   /* 1 = primero · 0 = último */
   let base = 30 + 70 * Math.pow(frac, 1.3);
-  if(N >= 10) base += (rank === 1 ? 25 : rank === 2 ? 12 : rank === 3 ? 6 : 0);   /* podio */
-  return Math.round(base);
+  if(N >= 10) base += (r === 1 ? 25 : r === 2 ? 12 : r === 3 ? 6 : 0);   /* podio */
+  base = Math.round(base);
+  return isFinite(base) ? base : 30;                          /* red de seguridad */
 }
 function dayEvent(t, date){ const d = (t && t.days || []).find(x=> x.date===date); return (d && d.ev && d.ev.k) ? d.ev : null; }
 function evLabel(ev){
@@ -7044,7 +7050,7 @@ function standings(t){
     dayRows(t, d.date).forEach(r=>{
       map[r.name] = map[r.name] || {name:r.name, avatar:r.avatar, pts:0, days:0};
       if(!map[r.name].avatar && r.avatar) map[r.name].avatar = r.avatar;
-      map[r.name].pts += r.pts; map[r.name].days++;
+      map[r.name].pts += (isFinite(r.pts) ? r.pts : 0); map[r.name].days++;
     });
   });
   return Object.values(map).sort((a,b)=> b.pts-a.pts);

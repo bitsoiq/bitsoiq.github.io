@@ -7027,10 +7027,13 @@ function basePts(rank, N){
      Lo de en medio se reparte por percentil. Piso alto a propósito:
      el objetivo es que la gente abra la app, no que sea buena en minijuegos. */
   if(N <= 1) return 125;
-  const frac = (N - rank) / (N - 1);
+  /* el lugar siempre dentro del campo: si no, Keep Up producía NaN */
+  const r = Math.min(Math.max(1, rank), N);
+  const frac = Math.max(0, Math.min(1, (N - r) / (N - 1)));
   let base = 30 + 70 * Math.pow(frac, 1.3);
-  if(N >= 10) base += (rank === 1 ? 25 : rank === 2 ? 12 : rank === 3 ? 6 : 0);
-  return Math.round(base);
+  if(N >= 10) base += (r === 1 ? 25 : r === 2 ? 12 : r === 3 ? 6 : 0);
+  base = Math.round(base);
+  return isFinite(base) ? base : 30;
 }
 function dayEvent(t, date){ const d = (t && t.days || []).find(x=> x.date===date); return (d && d.ev && d.ev.k) ? d.ev : null; }
 function evLabel(ev){
@@ -7068,6 +7071,31 @@ function iqAnnounce(t){
     }
   }
   if(dirty){ saveState._quiet = true; try{ saveState(); }catch(e){} saveState._quiet = false; }
+}
+/* ---------- señal de puntaje sospechoso ----------
+   El juego NO deja guardar un puntaje sin haber contestado la pregunta del día.
+   Si una fila existe sin su respuesta, esa fila se metió por fuera del juego.
+   No lo llamamos trampa: lo marcamos para que lo revises tú. */
+function suspectRow(t, r){
+  try{
+    if(!t || !r || r.value == null) return null;
+    const hayRespuesta = (state.triviaLog||[]).some(e=> e.tid===t.id && e.date===r.date && e.name===r.name);
+    if(!hayRespuesta) return 'no question answered';
+    /* puntaje muy fuera de rango contra la mediana del día */
+    const vals = (t.results||[]).filter(x=> x.date===r.date && x.value!=null).map(x=> +x.value).sort((a,b)=>a-b);
+    if(vals.length >= 8){
+      const med = vals[Math.floor(vals.length/2)];
+      const g = (t.days||[]).find(d=> d.date===r.date);
+      const lower = g && gameById(g.gameId) && gameById(g.gameId).lowerBetter;
+      if(med > 0 && !lower && +r.value > med*4) return 'score far outside the day';
+      if(med > 0 &&  lower && +r.value < med/4) return 'score far outside the day';
+    }
+    return null;
+  }catch(e){ return null; }
+}
+function suspectTag(t, r){
+  const why = suspectRow(t, r);
+  return why ? ` <span class="pill" style="background:#5A2A2A; color:#FFC9C9; font-size:9.5px" title="The app can't produce this row: ${esc(why)}. Worth a look.">\u26a0 ${esc(why)}</span>` : '';
 }
 function playedToday(t, date){
   /* todos los que jugaron ese día, hayan acertado la pregunta o no */
@@ -7145,7 +7173,7 @@ function standings(t){
     dayRows(t, d.date).forEach(r=>{
       map[r.name] = map[r.name] || {name:r.name, avatar:r.avatar, pts:0, days:0};
       if(!map[r.name].avatar && r.avatar) map[r.name].avatar = r.avatar;
-      map[r.name].pts += r.pts; map[r.name].days++;
+      map[r.name].pts += (isFinite(r.pts) ? r.pts : 0); map[r.name].days++;
     });
   });
   return Object.values(map).sort((a,b)=> b.pts-a.pts);
@@ -7164,7 +7192,7 @@ function todayCardHTML(t){
       <div class="lb-row ${r.name===me?'me':''}">
         <div class="rk">${r.place}</div>
         <span class="av ${r.place===1?'crowned':''}">${avatarHTML(avOf(r))}</span>
-        <div><div>${esc(r.name)}</div><div class="sub">${g.fmt(r.value)}${(r.mult > 1 && r.rank !== r.place) ? ` <span style="color:var(--ink3)">(#${r.rank} by score)</span>` : ''}${r.tags && r.tags.length ? ' · ' + r.tags.join(' · ') : ''}</div></div>
+        <div><div>${esc(r.name)}${suspectTag(t, r)}</div><div class="sub">${g.fmt(r.value)}${(r.mult > 1 && r.rank !== r.place) ? ` <span style="color:var(--ink3)">(#${r.rank} by score)</span>` : ''}${r.tags && r.tags.length ? ' · ' + r.tags.join(' · ') : ''}</div></div>
         <div class="pts">+${r.pts} pts</div>
       </div>`).join('')
     : `<div class="empty" style="padding:24px"><div class="big">🕹</div>No validated runs yet today.<br><span style="font-size:12.5px">Play the game of the day and pass the trivia to appear here.</span></div>`}
