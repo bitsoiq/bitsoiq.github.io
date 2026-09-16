@@ -7008,8 +7008,11 @@ function dayRows(t, date){
   const closedN = live.length || rs.length;
   const sorted = live.length ? live : rs.slice().sort(cmp);
   const N = closedN;
-  const score = (r, rank)=>{
-    const base = basePts(rank, N);
+  const score = (r, rank, campo)=>{
+    /* `campo` deja calcular los puntos de quien llega por Keep Up como si
+       hubiera estado en el campo de ese día: su lugar entre N+1 personas.
+       Los que jugaron a tiempo siguen midiéndose entre ellos, sin moverse. */
+    const base = basePts(rank, campo || N);
     let mult = 1; const tags = [];
     if(ev && ev.k==='moon'){ mult *= 1 + (ev.v||200)/100; tags.push('🚀 +'+(ev.v||200)+'%'); }
     const ED = t.evDef || {};
@@ -7033,10 +7036,15 @@ function dayRows(t, date){
   });
   /* los de Catch-Up se miden contra el campo YA CERRADO: reciben lo que les toca sin quitarle puntos a nadie */
   if(live.length && late.length){
+    /* Cada rezagado se mide contra el campo de ese día MÁS él mismo: si su
+       marca hubiera entrado ese día, ¿en qué lugar habría quedado y cuántos
+       puntos le habrían tocado? Ese es el número que recibe. A los demás no
+       les mueve nada: ellos se siguen midiendo entre los que jugaron a tiempo. */
+    const campo = live.length + 1;
     late.forEach(r=>{
       let rk = 1;
       live.forEach(x=>{ if(cmp(x, r) < 0) rk++; });
-      out.push(score(r, rk));
+      out.push(score(r, rk, campo));
     });
     out.sort((a,b)=> a.rank - b.rank || cmp(a,b));
   }

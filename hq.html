@@ -7106,6 +7106,27 @@ function suspectTag(t, r){
     : ` <span class="pill dim" style="font-size:9.5px"
         title="Usually innocent: a dropped network push, or no question assigned that day. Only a concern if it repeats.">${esc(o.why)}</span>`;
 }
+function mixedGameWarning(t){
+  /* Si en un mismo día quedaron registrados DOS juegos distintos, alguien jugó
+     con el calendario viejo (pestaña dormida desde el cambio). */
+  try{
+    const out = [];
+    (t.days||[]).filter(d=> d.gameId).forEach(d=>{
+      const porJuego = {};
+      (t.results||[]).filter(r=> r.date===d.date && r.value!=null).forEach(r=>{
+        const g = r.gameId || d.gameId;
+        porJuego[g] = (porJuego[g]||0) + 1;
+      });
+      const ids = Object.keys(porJuego);
+      if(ids.length > 1){
+        out.push({ date:d.date, detalle: ids
+          .sort((x,y)=> porJuego[y]-porJuego[x])
+          .map(g=> ((gameById(g)||{}).name || g) + ': ' + porJuego[g]).join(' · ') });
+      }
+    });
+    return out;
+  }catch(e){ return []; }
+}
 function playedToday(t, date){
   /* todos los que jugaron ese día, hayan acertado la pregunta o no */
   try{
@@ -7141,8 +7162,11 @@ function dayRows(t, date){
   const sorted = live.length ? live : rs.slice().sort(cmp);
   const N = closedN;
   let rank = 0;
-  const score = (r, rank)=>{
-    const base = basePts(rank, N);
+  const score = (r, rank, campo)=>{
+    /* `campo` deja calcular los puntos de quien llega por Keep Up como si
+       hubiera estado en el campo de ese día: su lugar entre N+1 personas.
+       Los que jugaron a tiempo siguen midiéndose entre ellos, sin moverse. */
+    const base = basePts(rank, campo || N);
     let mult = 1; const tags = [];
     if(ev && ev.k==='moon'){ mult *= 1 + (ev.v||200)/100; tags.push('🚀 +'+(ev.v||200)+'%'); }
     const ED = t.evDef || {};
@@ -7165,10 +7189,15 @@ function dayRows(t, date){
     return score(r, rank2);
   });
   if(live.length && late.length){
+    /* Cada rezagado se mide contra el campo de ese día MÁS él mismo: si su
+       marca hubiera entrado ese día, ¿en qué lugar habría quedado y cuántos
+       puntos le habrían tocado? Ese es el número que recibe. A los demás no
+       les mueve nada: ellos se siguen midiendo entre los que jugaron a tiempo. */
+    const campo = live.length + 1;
     late.forEach(r=>{
       let rk = 1;
       live.forEach(x=>{ if(cmp(x, r) < 0) rk++; });
-      out.push(score(r, rk));
+      out.push(score(r, rk, campo));
     });
     out.sort((a,b)=> a.rank - b.rank || cmp(a,b));
   }
@@ -7196,6 +7225,12 @@ function todayCardHTML(t){
   const me = state.profile ? state.profile.name : '';
   return `<div class="card">
     <h3>📊 Today — ${esc(g.name)}</h3>
+    ${(()=>{ const w = mixedGameWarning(t); if(!w.length) return '';
+      return `<div class="empty" style="padding:11px 14px; margin-bottom:10px; text-align:left; font-size:12.5px; background:#3A2A16; border-color:#6B4A18">
+        <b>⚠ Two different games recorded on the same day</b><br>
+        ${w.map(x=> esc(x.date) + ' → ' + esc(x.detalle)).join('<br>')}
+        <div style="color:var(--ink3); margin-top:6px">Someone played with an old copy of the schedule — a tab left open since you changed it. The newest player file fixes this: it re-checks the game right before every real run.</div>
+      </div>`; })()}
     <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap">${ICONS[g.id]}<span class="pill dim">scored in ${esc(g.unit)}</span><span class="pill neon" title="Everyone who played today, right or wrong on the question">${playedToday(t, tKey(t))} played</span><span class="pill dim" title="Only these earn points: they played AND got the question right">${rows.length} scored</span></div>
     ${rows.length ? byPoints(rows).map(r=>`
       <div class="lb-row ${r.name===me?'me':''}">
@@ -8938,6 +8973,10 @@ function cloudAdminRerender(){
     if(typeof renderHero === 'function') renderHero();
   }catch(e){}
 }
+document.addEventListener('visibilitychange', async ()=>{
+  if(document.hidden || (typeof run !== 'undefined' && run)) return;
+  try{ if(await cloudPull()) cloudAdminRerender(); }catch(e){}
+});
 setInterval(async()=>{
   if(typeof run !== 'undefined' && run) return;
   if(await cloudPull()) cloudAdminRerender();
