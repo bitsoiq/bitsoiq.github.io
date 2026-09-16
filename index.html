@@ -7068,6 +7068,54 @@ function loadPlayer(){
 }
 function savePlayer(){ try{ localStorage.setItem(P_KEY, JSON.stringify(player)); }catch(e){} }
 
+/* ============================================================
+   DÍA ANULADO (amnistía puntual)
+   Si el admin marca un día como anulado para cierto juego, quien haya
+   jugado ESE juego ese día recupera tres cosas, una sola vez:
+     1. el día vuelve a estar libre: puede volver a jugarlo
+     2. se le quita su resultado de ese día (jugó el juego equivocado)
+     3. le devolvemos su carta de All-in si la gastó ese día
+   No cambia ninguna regla del torneo: es un perdón puntual y se marca
+   como aplicado para que nunca vuelva a correr.
+   ============================================================ */
+function applyVoidedDays(){
+  try{
+    (state.tournaments||[]).forEach(t=>{
+      const lista = (t && t.voided) || [];
+      if(!lista.length || !player || !player.name) return;
+      player.amnesty = player.amnesty || {};
+      let cambio = false;
+      lista.forEach(v=>{
+        if(!v || !v.date) return;
+        const key = t.id + '|' + v.date;
+        if(player.amnesty[key]) return;                       /* ya se aplicó, nunca dos veces */
+
+        const dk  = (t.code||'') + '|' + v.date;
+        const mia = (t.results||[]).find(r=> r.date===v.date && r.name===player.name);
+        const tengoCandado = !!(player.daily && player.daily[dk] &&
+              (player.daily[dk].real || player.daily[dk].realStarted || player.daily[dk].retried));
+
+        /* ¿me toca el perdón? Tres formas de saberlo:
+           a) tengo una fila de ESE juego            → jugué el equivocado
+           b) tengo una fila sin puntaje             → lo empecé y lo abandoné
+           c) el día me aparece jugado pero ya no hay fila  → la nube ya la borró */
+        const meToca = (mia && v.gameId && mia.gameId === v.gameId)
+                    || (mia && mia.value == null)
+                    || (!mia && tengoCandado);
+
+        if(!meToca){ player.amnesty[key] = 'n/a'; cambio = true; return; }
+
+        if(player.daily && player.daily[dk]) delete player.daily[dk];       /* el día vuelve a estar libre */
+        t.results = (t.results||[]).filter(r=> !(r.date===v.date && r.name===player.name));
+        if(player.allin && player.allin[t.id] === v.date) delete player.allin[t.id];   /* de vuelta la carta */
+        player.amnesty[key] = Date.now();
+        cambio = true;
+        try{ toast("Sorted out 🎟 You can play today's game again right now — and your All-in is back"); }catch(e){}
+      });
+      if(cambio){ savePlayer(); saveState(); try{ rerenderCurrent(); }catch(e){} }
+    });
+  }catch(e){}
+}
 /* ---------- shared-store writes: merge, never clobber the admin ---------- */
 function rosterSinFotos(ros, dejar){
   /* quita fotos (nunca personas) para que el roster quepa cuando el disco está lleno */
@@ -7249,10 +7297,26 @@ function daily(t){
   if(!player.daily[k]) player.daily[k] = {w:0, real:false, retried:false};
   return player.daily[k];
 }
-function startPlay(mode){
+async function startPlay(mode){
   const t = curT(); if(!t) return;
-  const day = (t.days||[]).find(x=> x.date===effK(t));
+  let day = (t.days||[]).find(x=> x.date===effK(t));
   if(!day || !day.gameId){ toast('No game live right now.'); return; }
+  /* ÚLTIMA VERIFICACIÓN antes de una jugada real: confirmamos contra la nube que
+     el juego del día sigue siendo el mismo. Si el calendario cambió y esta
+     pestaña traía la versión vieja, avisamos en vez de dejar que juegue el
+     juego equivocado y quede fuera del tablero. */
+  if(mode !== 'warmup' && CLOUD.on){
+    const antes = day.gameId;
+    try{ await cloudPull(); }catch(e){}
+    const t2 = curT() || t;
+    const day2 = (t2.days||[]).find(x=> x.date===effK(t2));
+    if(day2 && day2.gameId && day2.gameId !== antes){
+      rerenderCurrent();
+      const g2 = gameById(day2.gameId);
+      toast('Today\'s game changed to ' + ((g2 && g2.name) || 'a new one') + ' — loading it now 🔄');
+      day = day2;
+    } else if(day2 && day2.gameId){ day = day2; }
+  }
   const d = daily(t);
   if(mode==='warmup'){
     if(d.real || d.realStarted){ toast('The real run is done — practice is closed for today.'); return; }
@@ -8331,8 +8395,20 @@ setInterval(async()=>{
   if(document.hidden) return;                       /* pestaña en segundo plano: no gasta datos */
   const a = syncShared();
   const b = await cloudPull();
-  if(a || b){ try{ syncClaims(); }catch(e){} rerenderCurrent(); }
+  if(a || b){ try{ syncClaims(); }catch(e){} try{ applyVoidedDays(); }catch(e){} rerenderCurrent(); }
 }, 12000);
+
+/* Una pestaña dormida NO sincroniza. Si alguien la dejó abierta desde ayer y
+   vuelve hoy, tendría el calendario viejo y podría jugar el juego equivocado.
+   Al volver a la pestaña, nos ponemos al día de inmediato. */
+document.addEventListener('visibilitychange', async ()=>{
+  if(document.hidden || run) return;
+  try{
+    const a = syncShared();
+    const b = await cloudPull();
+    if(a || b){ try{ syncClaims(); }catch(e){} rerenderCurrent(); }
+  }catch(e){}
+});
 
 /* ---------- boot ---------- */
 refreshCustom();
@@ -8471,7 +8547,7 @@ async function authInit(){
 try{ rehydrateAll(); }catch(e){}
 /* primera sincronización inmediata: si esperamos al primer tick, alguien que
    escribe su código en los primeros segundos no encontraría ningún torneo */
-setTimeout(()=>{ try{ cloudPull().then(()=> rerenderCurrent()); }catch(e){} }, 300);
+setTimeout(()=>{ try{ cloudPull().then(()=>{ try{ applyVoidedDays(); }catch(e){} rerenderCurrent(); }); }catch(e){} }, 300);
 authInit();
 
 
