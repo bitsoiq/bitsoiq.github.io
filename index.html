@@ -6546,6 +6546,28 @@ function iqShowRecap(t, name, preview, studyFn){
   paint();
   sGood();
 }
+/* ---------- el Wrapped de la semana ----------
+   Sale los VIERNES, pero solo DESPUÉS de contestar la pregunta del día.
+   Se agenda al responder y se abre cuando el jugador cierra la pantalla
+   de resultado, para que no le caiga encima. */
+let recapPend = false;
+function queueRecap(){
+  try{
+    const t = (typeof curT === 'function') ? curT() : null;
+    if(!t || t.recap === false) return;
+    if(new Date().getDay() !== 5) return;            /* solo viernes */
+    if(typeof cuDate !== 'undefined' && cuDate) return;   /* recuperando otro día: no */
+    state.recapSeen = state.recapSeen || {};
+    const k = 'rcp|' + t.id + '|' + tKey(t) + '|' + player.name;
+    if(state.recapSeen[k]) return;                    /* una vez por viernes */
+    recapPend = true;
+  }catch(e){}
+}
+function flushRecap(){
+  if(!recapPend) return;
+  recapPend = false;
+  try{ maybeRecap(curT()); }catch(e){}
+}
 function maybeRecap(t){
   if(typeof player === 'undefined' || !player || !player.name) return;
   if(!t || t.recap === false) return;
@@ -6687,10 +6709,12 @@ function showTrivia(gid){
       const okBtn = box.children[ord.indexOf(q.a)];
       if(oi===q.a){
         const s = iqLog(q, true);
+        try{ queueRecap(); }catch(e){}
         b.classList.add('ok'); sGood(); confetti();
         setTimeout(()=>{ closeModal(); showReveal(q, true, ()=> showWinResult(g), s ? s.n : 0); }, 800);
       } else {
         iqLog(q, false);
+        try{ queueRecap(); }catch(e){}
         b.classList.add('bad'); okBtn.classList.add('ok'); sBad();
         setTimeout(()=>{ closeModal(); showReveal(q, false, ()=> showNoPoints(g), 0); }, 1100);
       }
@@ -7749,7 +7773,6 @@ function renderArena(){
   $('#ar-code').innerHTML = `🔑 ${esc(t.code||'')}`;
   renderTodayCard(t);
   renderSide(t);
-  maybeRecap(t);
   try{ iqAnnounce(t); }catch(e){}
 }
 function renderTodayCard(t){
@@ -8408,8 +8431,8 @@ function showWinResult(g){
     ${lmoreHTML()}
     <div class="mrow">
       ${status==='recorded' && canRescue() ? `<button class="btn ghost" onclick='closeModal(); showSecondChance("${g.id}")'>🎤 Replay once — costs a joke</button>` : ''}
-      ${status==='recorded' ? `<button class="btn ghost" onclick="closeModal(); cuDate=null; setTab('points')">See the board</button>` : ''}
-      <button class="btn" onclick="closeModal(); cuEnd()">${cuDate ? '⏰ Next missed day' : 'Back to the arena'}</button>
+      ${status==='recorded' ? `<button class="btn ghost" onclick="closeModal(); cuDate=null; setTab('points'); flushRecap()">See the board</button>` : ''}
+      <button class="btn" onclick="closeModal(); cuEnd(); flushRecap()">${cuDate ? '⏰ Next missed day' : 'Back to the arena'}</button>
     </div>
   `);
   sWin();
@@ -8425,7 +8448,7 @@ function showNoPoints(g){
       : `That was the last chance for today — at Bitso we stay sharp on the facts. Tomorrow is a fresh game.`}</p>
     <div class="mrow">
       ${rescue ? `<button class="btn big" onclick='closeModal(); showSecondChance("${g.id}")'>🎤 Save it — replay for a joke</button>` : ''}
-      <button class="btn ghost" onclick="closeModal(); cuEnd()">Accept it</button>
+      <button class="btn ghost" onclick="closeModal(); cuEnd(); flushRecap()">Accept it</button>
     </div>
   `);
 }
