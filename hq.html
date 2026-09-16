@@ -7072,30 +7072,39 @@ function iqAnnounce(t){
   }
   if(dirty){ saveState._quiet = true; try{ saveState(); }catch(e){} saveState._quiet = false; }
 }
-/* ---------- señal de puntaje sospechoso ----------
-   El juego NO deja guardar un puntaje sin haber contestado la pregunta del día.
-   Si una fila existe sin su respuesta, esa fila se metió por fuera del juego.
-   No lo llamamos trampa: lo marcamos para que lo revises tú. */
+/* ---------- señales sobre un puntaje ----------
+   Hay razones INOCENTES para que falte el registro de la pregunta:
+     · se perdió el envío por un parpadeo de red
+     · ese día no había pregunta asignada (calendario editado a media jornada)
+   Por eso una sola señal NO acusa a nadie: se muestra en gris como dato.
+   La marca roja sale solo cuando DOS señales coinciden, que es cuando
+   de verdad vale la pena mirar. */
 function suspectRow(t, r){
   try{
     if(!t || !r || r.value == null) return null;
+    const señales = [];
     const hayRespuesta = (state.triviaLog||[]).some(e=> e.tid===t.id && e.date===r.date && e.name===r.name);
-    if(!hayRespuesta) return 'no question answered';
-    /* puntaje muy fuera de rango contra la mediana del día */
+    if(!hayRespuesta) señales.push('no question on record');
     const vals = (t.results||[]).filter(x=> x.date===r.date && x.value!=null).map(x=> +x.value).sort((a,b)=>a-b);
     if(vals.length >= 8){
       const med = vals[Math.floor(vals.length/2)];
-      const g = (t.days||[]).find(d=> d.date===r.date);
-      const lower = g && gameById(g.gameId) && gameById(g.gameId).lowerBetter;
-      if(med > 0 && !lower && +r.value > med*4) return 'score far outside the day';
-      if(med > 0 &&  lower && +r.value < med/4) return 'score far outside the day';
+      const d = (t.days||[]).find(x=> x.date===r.date);
+      const lower = d && gameById(d.gameId) && gameById(d.gameId).lowerBetter;
+      if(med > 0 && !lower && +r.value > med*4) señales.push('score far outside the day');
+      if(med > 0 &&  lower && +r.value < med/4) señales.push('score far outside the day');
     }
-    return null;
+    if(!señales.length) return null;
+    return { why: señales.join(' + '), grave: señales.length >= 2 };
   }catch(e){ return null; }
 }
 function suspectTag(t, r){
-  const why = suspectRow(t, r);
-  return why ? ` <span class="pill" style="background:#5A2A2A; color:#FFC9C9; font-size:9.5px" title="The app can't produce this row: ${esc(why)}. Worth a look.">\u26a0 ${esc(why)}</span>` : '';
+  const o = suspectRow(t, r);
+  if(!o) return '';
+  return o.grave
+    ? ` <span class="pill" style="background:#5A2A2A; color:#FFC9C9; font-size:9.5px"
+        title="Two signals at once — this row is very hard to produce by playing. Worth a look.">\u26a0 ${esc(o.why)}</span>`
+    : ` <span class="pill dim" style="font-size:9.5px"
+        title="Usually innocent: a dropped network push, or no question assigned that day. Only a concern if it repeats.">${esc(o.why)}</span>`;
 }
 function playedToday(t, date){
   /* todos los que jugaron ese día, hayan acertado la pregunta o no */
