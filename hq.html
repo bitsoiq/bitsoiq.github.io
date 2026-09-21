@@ -1053,6 +1053,18 @@ function tzParts(ms){
    "DAY x OF y" y, sobre todo, LA PREGUNTA DEL DÍA, porque se elige por la
    posición del día en la lista. Una pregunta se perdería y el resto saldría
    corrida. Aquí limpiamos los duplicados al recibir el torneo. */
+function daysFingerprint(){
+  try{
+    const parts = [];
+    (state.tournaments||[]).forEach(t=>{
+      parts.push(t.id + ':' + (t.days||[]).map(d=> d.date + '=' + (d.gameId||'-')).join(','));
+    });
+    const str = parts.join('|');
+    let h = 0;
+    for(let i=0;i<str.length;i++){ h = (h*31 + str.charCodeAt(i)) | 0; }
+    return String(h) + '.' + str.length;
+  }catch(e){ return ''; }
+}
 function dedupeDays(t){
   try{
     if(!t || !Array.isArray(t.days)) return t;
@@ -7172,7 +7184,7 @@ function byPoints(rows){
   });
 }
 function dayRows(t, date){
-  const rs = (t.results||[]).filter(r=> r.date===date && r.value != null);
+  const rs = (t.results||[]).filter(r=> r.date===date && r.value != null && !r.redo);
   if(!rs.length) return [];
   const day = (t.days||[]).find(d=>d.date===date);
   const g = day && day.gameId ? gameById(day.gameId) : null;
@@ -7766,6 +7778,26 @@ function iqQStats(t){
     return {qid, q: q ? q.q : (m.q||'(deleted question)'), a:m.a, c:m.c, pct: Math.round(m.c/m.a*100)};
   }).sort((x,y)=> x.pct-y.pct || y.a-x.a);
 }
+function redoKeyNew(tid){
+  const t = (state.tournaments||[]).find(x=> x.id===tid); if(!t) return;
+  t.redoKey = Math.random().toString(36).slice(2,8).toUpperCase();
+  saveState(); renderTournament();
+  toast('🔑 Reset link ready — copy it and send it only to that player');
+}
+function redoKeyClear(tid){
+  const t = (state.tournaments||[]).find(x=> x.id===tid); if(!t) return;
+  delete t.redoKey;
+  saveState(); renderTournament();
+  toast('Reset link disabled');
+}
+function redoLinkCopy(tid){
+  const t = (state.tournaments||[]).find(x=> x.id===tid); if(!t || !t.redoKey) return;
+  const url = 'https://bitsoiq.github.io/?redo=' + encodeURIComponent(t.redoKey);
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url);
+  }catch(e){}
+  toast('📋 Link copied — it only works for whoever opens it, once per player');
+}
 function evDef(t){ t.evDef = t.evDef || { air:25, dhv:50, dhreq:3, moon:200 }; return t.evDef; }
 function evDefSet(tid, k, v){
   const t = (state.tournaments||[]).find(x=>x.id===tid); if(!t) return;
@@ -7813,6 +7845,17 @@ function boostersTabHTML(t){
       <input type="number" class="tinput" style="width:130px" value="${D.allin||2}" min="2" max="5" onchange="evDefSet('${t.id}','allin',this.value)">
       <label class="alabel">🚀 To the Moon — % extra points</label>
       <input type="number" class="tinput" style="width:130px" value="${D.moon}" min="10" max="300" onchange="evDefSet('${t.id}','moon',this.value)">
+      <label class="alabel" style="margin-top:22px">🔄 Reset link — for a player who played the wrong games</label>
+      <p class="cardhint">Wipes THAT player's scores in this tournament and puts those days back in their Keep Up. Nobody else is affected. Only works with the key below, so nobody can reset themselves.</p>
+      ${t.redoKey
+        ? `<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+             <code style="background:var(--bg2); padding:8px 12px; border-radius:10px; font-size:12.5px; color:var(--neon)">?redo=${esc(t.redoKey)}</code>
+             <button class="btn sm" onclick="redoLinkCopy('${t.id}')">📋 Copy link</button>
+             <button class="btn sm ghost" onclick="redoKeyNew('${t.id}')">↻ New key</button>
+             <button class="btn sm danger" onclick="redoKeyClear('${t.id}')">Disable</button>
+           </div>
+           <p class="cardhint" style="margin-top:6px">Rotate the key when you're done, so an old link stops working.</p>`
+        : `<button class="btn sm ghost" onclick="redoKeyNew('${t.id}')">🔑 Create a reset link</button>`}
       <p class="cardhint" style="margin-top:12px">Boosters stack up to a total cap of <b>+300%</b> (the players' 🃏 All-in ×2 included) and the points breakdown is always visible on the board.</p>
     </div>
     <div class="card">

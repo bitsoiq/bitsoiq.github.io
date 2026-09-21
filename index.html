@@ -2146,10 +2146,29 @@ function cloudRecomputeStreaks(){
    COMPLETO (600 personas con foto = varios MB). Guardando hasta dónde
    íbamos, la siguiente visita solo pide lo que cambió. */
 const SYNC_LS = 'bitsoiq_sync';
+function daysFingerprint(){
+  /* huella corta del calendario que tenemos en este dispositivo:
+     cuántos días, cuáles fechas y qué juego lleva cada una */
+  try{
+    const parts = [];
+    (state.tournaments||[]).forEach(t=>{
+      parts.push(t.id + ':' + (t.days||[]).map(d=> d.date + '=' + (d.gameId||'-')).join(','));
+    });
+    const str = parts.join('|');
+    let h = 0;
+    for(let i=0;i<str.length;i++){ h = (h*31 + str.charCodeAt(i)) | 0; }
+    return String(h) + '.' + str.length;
+  }catch(e){ return ''; }
+}
 function syncLoad(){
   try{
     const o = JSON.parse(localStorage.getItem(SYNC_LS) || 'null');
-    if(o && typeof o === 'object') return o;
+    if(o && typeof o === 'object'){
+      /* si la copia local del calendario no es la que dejamos guardada,
+         el sello no sirve: obligamos a bajarlo de nuevo */
+      if(o.daysSig !== daysFingerprint()) o.stamp = '';
+      return o;
+    }
   }catch(e){}
   return null;
 }
@@ -2164,8 +2183,13 @@ function syncForgetRoster(){
 function syncSave(){
   try{
     const m = CLOUD.m || {};
+    /* Guardamos el sello del calendario (para no re-bajarlo) PERO junto con
+       una huella de la copia local. Si al volver la huella no coincide, el
+       sello miente y se descarta: así nadie queda clavado con un calendario
+       viejo y tampoco gastamos datos de más. */
     localStorage.setItem(SYNC_LS, JSON.stringify({
-      stamp: m.stamp || '', chatTs: m.chatTs || 0, trivId: m.trivId || 0,
+      stamp: m.stamp || '', daysSig: daysFingerprint(),
+      chatTs: m.chatTs || 0, trivId: m.trivId || 0,
       plAt: m.plAt || '', resAt: m.resAt || '', slowAt: m.slowAt || 0
     }));
   }catch(e){}
@@ -7060,7 +7084,7 @@ function ptsLeader(rows){
   return rows.slice().sort((a,b)=> (b.pts - a.pts) || (a.rank - b.rank))[0];
 }
 function dayRows(t, date){
-  const rs = (t.results||[]).filter(r=> r.date===date && r.value != null);   /* las corridas iniciadas sin terminar no puntúan */
+  const rs = (t.results||[]).filter(r=> r.date===date && r.value != null && !r.redo);   /* ni las iniciadas sin terminar, ni las marcadas para rehacer */
   if(!rs.length) return [];
   const day = (t.days||[]).find(d=>d.date===date);
   const g = day && day.gameId ? gameById(day.gameId) : null;
@@ -7157,6 +7181,67 @@ function savePlayer(){ try{ localStorage.setItem(P_KEY, JSON.stringify(player));
    No cambia ninguna regla del torneo: es un perdón puntual y se marca
    como aplicado para que nunca vuelva a correr.
    ============================================================ */
+/* ============================================================
+   LINK DE REINICIO  —  ?redo=LLAVE
+   Para destrabar a alguien que jugó los juegos equivocados (por ejemplo,
+   porque su pestaña traía un calendario viejo). Borra SUS puntos de este
+   torneo y le deja los días disponibles otra vez en Keep Up.
+
+   No borra filas de la base: las marca como "rehacer", que es lo que el
+   jugador sí tiene permiso de hacer. Sus puntos dejan de contar al instante
+   y el día vuelve a aparecer en Keep Up.
+
+   La LLAVE la pones tú en HQ. Sin la llave correcta el link no hace nada,
+   así que nadie puede reiniciarse por su cuenta.
+   ============================================================ */
+async function redoFromLink(){
+  try{
+    const m = /[?&]redo=([^&]+)/.exec(location.search);
+    if(!m) return;
+    const llave = decodeURIComponent(m[1]);
+    history.replaceState(null, '', location.pathname);
+    if(!player || !player.name){ toast('Sign in first, then open the link again'); return; }
+    await cloudPull();
+    const t = (state.tournaments||[]).find(x=> x.redoKey && String(x.redoKey) === llave);
+    if(!t){ toast('That reset link is no longer valid — ask the admin for a new one'); return; }
+
+    /* UNA SOLA VEZ por llave. Si vuelve a abrir el mismo link (por ejemplo
+       desde el historial de Slack), no le borramos lo que ya rehizo. */
+    player.redoUsed = player.redoUsed || {};
+    const usoKey = t.id + '|' + llave;
+    if(player.redoUsed[usoKey]){
+      toast('✅ You already used this reset — just play from the normal link now');
+      return;
+    }
+
+    const mias = (t.results||[]).filter(r=> r.name === player.name && !r.redo);
+    if(!mias.length){ toast('Nothing to reset — you have no scores in this tournament yet'); return; }
+
+    /* marcamos en la nube (UPDATE, que sí nos permite la base) */
+    let ok = 0;
+    for(const r of mias){
+      const fila = Object.assign({}, r, { redo: true });
+      try{
+        const res = await cfetch('results?on_conflict=tid,date,name', {
+          method:'POST',
+          headers:{ 'Prefer':'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify([{ tid: t.id, date: r.date, name: player.name, data: slimRow(fila) }])
+        });
+        if(res && res.ok){ ok++; r.redo = true; }
+      }catch(e){}
+    }
+    /* y liberamos los días en este dispositivo */
+    const dl = player.daily || {};
+    mias.forEach(r=>{ const k = (t.code||'') + '|' + r.date; if(dl[k]) delete dl[k]; });
+    if(player.allin) delete player.allin[t.id];
+    player.redoUsed[usoKey] = Date.now();
+    savePlayer(); saveState();
+    try{ rerenderCurrent(); }catch(e){}
+    toast(ok
+      ? ('🔄 Reset done — ' + ok + ' day' + (ok===1?'':'s') + ' back on the table. Replay them in Keep Up 💪 From now on just use the normal link.')
+      : 'Could not reach the cloud — try the link again in a moment');
+  }catch(e){}
+}
 function applyVoidedDays(){
   try{
     (state.tournaments||[]).forEach(t=>{
@@ -7328,7 +7413,7 @@ let cuDate = null;                       /* catch-up: fecha del día perdido en 
 function effK(t){ return cuDate || tKey(t); }
 function cuMissed(t){
   /* días de juego pasados sin resultado mío y sin intento quemado en este device */
-  const played = new Set((t.results||[]).filter(r=> r.name===player.name).map(r=> r.date));
+  const played = new Set((t.results||[]).filter(r=> r.name===player.name && !r.redo).map(r=> r.date));
   const dl = player.daily || {};
   return (t.days||[]).filter(x=> x.gameId && x.date < tKey(t))
     .filter(x=> !played.has(x.date))
@@ -8681,6 +8766,18 @@ async function authInit(){
     authGateShow();
   }
 }
+/* ESCOTILLA: abrir la app con ?resync=1 borra la copia local y baja todo
+   de cero. Sirve para destrabar a alguien sin pedirle que limpie el navegador. */
+try{
+  if(/[?&]resync=1/.test(location.search)){
+    localStorage.removeItem(SYNC_LS);
+    (state.tournaments||[]).forEach(t=>{ t.days = []; });
+    try{ saveState(); }catch(e){}
+    history.replaceState(null, '', location.pathname);
+    setTimeout(()=>{ try{ toast('🔄 Fresh sync — pulling the latest schedule'); }catch(e){} }, 900);
+  }
+}catch(e){}
+try{ if(/[?&]redo=/.test(location.search)) setTimeout(()=>{ try{ redoFromLink(); }catch(e){} }, 1200); }catch(e){}
 try{ rehydrateAll(); }catch(e){}
 /* primera sincronización inmediata: si esperamos al primer tick, alguien que
    escribe su código en los primeros segundos no encontraría ningún torneo */
