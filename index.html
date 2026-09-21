@@ -1317,7 +1317,7 @@ function tickSoon(){
   const el = document.getElementById('soon-s'); if(!el) return;
   const t = (typeof curT === 'function') ? curT() : null;
   const ts = tourStartMs(t); if(ts == null) return;
-  const L = splitLeft(ts - nowMs());
+  const L = splitLeft(ts - Date.now());
   const p2 = n => String(n).padStart(2, '0');
   const put = (id, v)=>{ const e = document.getElementById(id); if(e) e.textContent = v; };
   put('soon-d', L.d); put('soon-h', p2(L.h)); put('soon-m', p2(L.m)); put('soon-s', p2(L.s));
@@ -7903,22 +7903,12 @@ function renderArena(){
   } else {
     $('#ar-day').textContent = dayLabel;
     if(_big) _big.textContent = 'TODAY';
-    $('#ar-dayline').textContent = dayLabel + ' · ' + new Date(nowMs()).toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric'});
+    $('#ar-dayline').textContent = dayLabel + ' · ' + new Date(Date.now()).toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric'});
   }
   $('#ar-code').innerHTML = `🔑 ${esc(t.code||'')}`;
   renderTodayCard(t);
   renderSide(t);
-  /* si su reloj está desfasado, se lo decimos: es la causa de que vea
-     un juego distinto al de los demás */
-  try{
-    if(Math.abs(CLOCK_SKEW) > 3600000 && !renderArena._avisoReloj){
-      renderArena._avisoReloj = true;
-      const dias = Math.round(Math.abs(CLOCK_SKEW) / 86400000);
-      toast(dias
-        ? ('⏰ Your device clock is off by ' + dias + ' day' + (dias===1?'':'s') + ' — we now use Bitso time, so your game matches everyone else')
-        : '⏰ Your device clock was off — we now use Bitso time');
-    }
-  }catch(e){}
+
   try{ iqAnnounce(t); }catch(e){}
 }
 function renderTodayCard(t){
@@ -7930,7 +7920,7 @@ function renderTodayCard(t){
     const _d0 = days[0].date;
     const _gd = days.filter(d=> d.gameId).length || days.length;
     const _ts = tourStartMs(t);
-    const _L  = splitLeft(_ts == null ? 0 : (_ts - nowMs()));
+    const _L  = splitLeft(_ts == null ? 0 : (_ts - Date.now()));
     const _p2 = n => String(n).padStart(2, '0');
     const _hd = soonHead(t, _ts, _L);
     box.innerHTML = `<div class="soonbox"><div class="in">
