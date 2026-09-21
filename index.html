@@ -2146,6 +2146,9 @@ function cloudRecomputeStreaks(){
    COMPLETO (600 personas con foto = varios MB). Guardando hasta dónde
    íbamos, la siguiente visita solo pide lo que cambió. */
 const SYNC_LS = 'bitsoiq_sync';
+/* Subele 1 cada vez que un arreglo necesite que TODOS vuelvan a bajar limpio.
+   2 = arreglo de la marca de agua que dejaba huecos en el tablero de Today. */
+const SYNC_FIX = 2;
 function daysFingerprint(){
   /* huella corta del calendario que tenemos en este dispositivo:
      cuántos días, cuáles fechas y qué juego lleva cada una */
@@ -2167,6 +2170,18 @@ function syncLoad(){
       /* si la copia local del calendario no es la que dejamos guardada,
          el sello no sirve: obligamos a bajarlo de nuevo */
       if(o.daysSig !== daysFingerprint()) o.stamp = '';
+      /* CURACION UNICA POR DISPOSITIVO.
+         Las versiones anteriores podian adelantar la marca de sincronizacion
+         sobre filas que nunca se aplicaron: el puntaje salia en el chat pero
+         no en Today, y no se volvia a pedir jamas. Este archivo ya no lo
+         provoca, pero los equipos que vienen de antes traen el dano puesto.
+         Una sola vez tiramos las marcas de resultados y chat y bajamos limpio.
+         No tocamos trivId: ese camino nunca se salto filas y re-bajarlo
+         costaria megas de mas. */
+      if(o.fix !== SYNC_FIX){
+        o.stamp = ''; o.resAt = ''; o.chatTs = 0; o.slowAt = 0;
+        o.fix = SYNC_FIX;
+      }
       return o;
     }
   }catch(e){}
@@ -2190,7 +2205,8 @@ function syncSave(){
     localStorage.setItem(SYNC_LS, JSON.stringify({
       stamp: m.stamp || '', daysSig: daysFingerprint(),
       chatTs: m.chatTs || 0, trivId: m.trivId || 0,
-      plAt: m.plAt || '', resAt: m.resAt || '', slowAt: m.slowAt || 0
+      plAt: m.plAt || '', resAt: m.resAt || '', slowAt: m.slowAt || 0,
+      fix: m.fix || SYNC_FIX
     }));
   }catch(e){}
 }
@@ -2216,6 +2232,12 @@ async function cloudPull(){
     const stamp = JSON.stringify(meta.map(r=> r.tid + '|' + r.updated_at).sort());
     if(stamp !== CLOUD.m.stamp){
       const tours = await get('tournaments?select=*');
+      /* cfetch devuelve [] cuando la peticion falla. Si la lista de metadatos
+         traia torneos y esta viene vacia, la peticion fallo: NO guardamos la
+         marca. Si la guardaramos, el siguiente tick creeria que ya estamos al
+         dia con tmap vacio, se saltaria todas las filas de results y el tablero
+         se quedaria en blanco de forma permanente en este dispositivo. */
+      if(!tours.length && meta.length) throw new Error('tournaments fetch vacio');
       const byTid = {};
       tours.forEach(r=>{ if(r && r.tid && r.data) byTid[r.tid] = dedupeDays(r.data); });
       const newTs = Object.keys(byTid).map(tid=>{
@@ -2258,10 +2280,16 @@ async function cloudPull(){
 
     /* --- chat: incremental by timestamp --- */
     const chat = await get('chat?select=*&ts=gt.' + (CLOUD.m.chatTs||0) + '&order=ts.asc&limit=500');
+    /* La marca de agua avanza SOLO sobre lo que de verdad quedo guardado.
+       Antes avanzaba incluso sobre filas que se saltaban porque el torneo no
+       estaba cargado en esa vuelta: esas filas no se volvian a pedir nunca y
+       desaparecian del tablero para siempre en ese dispositivo. */
+    let chatTsCand = CLOUD.m.chatTs||0, chatCorte = false;
     chat.forEach(c=>{
       if(!c || !c.data) return;
-      CLOUD.m.chatTs = Math.max(CLOUD.m.chatTs||0, +c.ts||0);
-      const t = tmap[c.tid]; if(!t) return;
+      const t = tmap[c.tid];
+      if(!t){ if(!Object.keys(tmap).length) chatCorte = true; return; }
+      if(!chatCorte) chatTsCand = Math.max(chatTsCand, +c.ts||0);
       t.chat = t.chat || [];
       if(!t.chat.some(m=> m.id===c.data.id)){
         t.chat.push(hydrateRow(c.data));
@@ -2270,6 +2298,7 @@ async function cloudPull(){
         changed = true;
       }
     });
+    CLOUD.m.chatTs = chatTsCand;
 
 
     /* jokes & chances: tiny tables — every tick, so admin strikes reflect in seconds */
@@ -2327,17 +2356,28 @@ async function cloudPull(){
     else rq = 'results?select=*&updated_at=gt.' + encodeURIComponent(CLOUD.m.resAt) + '&order=updated_at.asc&limit=2000';
     let results = await get(rq);
     if(!Array.isArray(results)) results = [];
-    if(results.length && results[0].updated_at === undefined && CLOUD.m.resAt){
-      CLOUD.m.resAt = null;                                  /* la columna aún no existe: volvemos al modo anterior */
-    } else {
-      results.forEach(r=>{ if(r.updated_at && (!CLOUD.m.resAt || r.updated_at > CLOUD.m.resAt)) CLOUD.m.resAt = r.updated_at; });
-      if(!CLOUD.m.resAt && results.length && results[0].updated_at) CLOUD.m.resAt = results[results.length-1].updated_at;
-    }
+    const sinColumna = results.length && results[0].updated_at === undefined && CLOUD.m.resAt;
+    if(sinColumna) CLOUD.m.resAt = null;   /* la columna aún no existe: volvemos al modo anterior */
+    /* Las filas del modo incremental vienen ordenadas por updated_at ascendente.
+       Si una no se puede aplicar, cortamos la marca ANTES de ella: asi no se
+       abre un hueco permanente. Es la causa de los puntajes que aparecian en el
+       chat pero nunca en Today. */
+    /* Solo desconfiamos cuando el mapa de torneos viene vacio (la peticion
+       fallo). Si el mapa es bueno y una fila apunta a un torneo que ya no
+       existe, esa fila es huerfana: la saltamos SIN trabar la marca, o nos
+       quedariamos pidiendola en cada vuelta para siempre. */
+    const mapaConfiable = Object.keys(tmap).length > 0;
+    let resAtCand = CLOUD.m.resAt || '', resCorte = false, resSaltadas = 0;
     if(results.length || slow){
       const seen = {};
       results.forEach(r=>{
-        if(!r || !r.data) return;
-        const t = tmap[r.tid]; if(!t) return;
+        if(!r || !r.data) return;                        /* basura: saltarla es seguro */
+        const t = tmap[r.tid];
+        if(!t){
+          if(!mapaConfiable){ resCorte = true; resSaltadas++; }  /* no sabemos: no avanzamos */
+          return;                                                /* huerfana: seguir de largo */
+        }
+        if(!resCorte && r.updated_at && (!resAtCand || r.updated_at > resAtCand)) resAtCand = r.updated_at;
         t.results = t.results || [];
         const i = t.results.findIndex(x=> x.date===r.date && x.name===r.name);
         const cur = JSON.stringify(i>=0 ? t.results[i] : null);
@@ -2356,6 +2396,8 @@ async function cloudPull(){
         });
       }
     }
+    if(!sinColumna) CLOUD.m.resAt = resAtCand;
+    if(resSaltadas && typeof console !== 'undefined') try{ console.warn('[BitsoIQ] ' + resSaltadas + ' fila(s) no se pudieron aplicar: la marca de sync no avanza, se vuelven a pedir'); }catch(e){}
 
     if(slow){
       const [customs, trivia] = await Promise.all([
@@ -2416,12 +2458,31 @@ function slimState(){
   c.roster = state.roster;
   return c;
 }
+function syncForget(){
+  /* El disco no se pudo quedar con todo. Si ademas guardaramos la marca de
+     sincronizacion, la proxima visita creeria que ya tiene esas filas y no las
+     volveria a pedir: desaparecerian de Today para siempre en este dispositivo.
+     Preferimos volver a bajarlas, aunque cueste una peticion mas. */
+  try{
+    if(typeof CLOUD !== 'undefined' && CLOUD.m){
+      CLOUD.m.resAt = ''; CLOUD.m.chatTs = 0; CLOUD.m.trivId = 0;
+      CLOUD.m.slowAt = 0; CLOUD.m.stamp = ''; CLOUD.m._boot = 0;
+    }
+    const o = JSON.parse(localStorage.getItem(SYNC_LS) || '{}');
+    o.resAt = ''; o.chatTs = 0; o.trivId = 0; o.slowAt = 0; o.stamp = '';
+    localStorage.setItem(SYNC_LS, JSON.stringify(o));
+  }catch(e){}
+}
 function saveState(){
+  let guardado = true;
   try{ localStorage.setItem(LS_KEY, JSON.stringify(slimState())); }
   catch(e){
+    guardado = false;
     try{ localStorage.setItem(LS_KEY, JSON.stringify(Object.assign({}, slimState(), {triviaLog:[]}))); }
     catch(e2){ if(!saveState._warned){ saveState._warned = true; try{ toast('Storage full — your progress lives in the cloud ☁️'); }catch(_){} } }
   }
+  /* aqui es donde faltaba: el comentario de slimState prometia esto y no estaba */
+  if(!guardado) syncForget();
   if(!saveState._quiet) cloudSchedulePush();
 }
 
