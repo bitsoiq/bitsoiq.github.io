@@ -1047,6 +1047,33 @@ function tzParts(ms){
     return { y:String(d.getFullYear()), mo:String(d.getMonth()+1).padStart(2,'0'), d:String(d.getDate()).padStart(2,'0'), h:d.getHours(), mi:d.getMinutes(), s:d.getSeconds() };
   }
 }
+/* ---------- calendario sin días repetidos ----------
+   Si el calendario del torneo trae una fecha dos veces (pasa al editar el
+   plan a media jornada), todo lo que cuenta días se desfasa: el contador
+   "DAY x OF y" y, sobre todo, LA PREGUNTA DEL DÍA, porque se elige por la
+   posición del día en la lista. Una pregunta se perdería y el resto saldría
+   corrida. Aquí limpiamos los duplicados al recibir el torneo. */
+function dedupeDays(t){
+  try{
+    if(!t || !Array.isArray(t.days)) return t;
+    const vistos = {}, out = [];
+    t.days.forEach(d=>{
+      if(!d || !d.date) return;
+      if(vistos[d.date]){
+        /* si el repetido trae juego y el que guardamos no, nos quedamos con el bueno */
+        if(d.gameId && !vistos[d.date].gameId) Object.assign(vistos[d.date], d);
+        return;
+      }
+      vistos[d.date] = d; out.push(d);
+    });
+    out.sort((a,b)=> a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+    t.days = out;                      /* sin duplicados y en orden, siempre */
+    return t;
+  }catch(e){ return t; }
+}
+function dedupeAllDays(){
+  try{ (state.tournaments||[]).forEach(dedupeDays); }catch(e){}
+}
 function tKey(t){
   const p = tzParts(Date.now() - tourStartHour(t)*3600e3);
   return p.y + '-' + p.mo + '-' + p.d;
@@ -1863,7 +1890,7 @@ async function cloudPull(){
     if(stamp !== CLOUD.m.stamp){
       const tours = await get('tournaments?select=*');
       const byTid = {};
-      tours.forEach(r=>{ if(r && r.tid && r.data) byTid[r.tid] = r.data; });
+      tours.forEach(r=>{ if(r && r.tid && r.data) byTid[r.tid] = dedupeDays(r.data); });
       const newTs = Object.keys(byTid).map(tid=>{
         const local = (state.tournaments||[]).find(x=> x.id===tid);
         const t = Object.assign({}, byTid[tid]);

@@ -1010,6 +1010,12 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
 .ptsnote p{margin:0 0 10px}
 .ptsnote p:last-child{margin:0}
 .ptsnote b{color:var(--ink)}
+
+.cuban{background:#3A2A16; border:2px solid #A9761F; border-radius:16px; padding:13px 16px; margin-bottom:14px;
+  display:flex; flex-direction:column; gap:7px; align-items:flex-start}
+.cuban b{font-size:14.5px; color:#FFD98A; letter-spacing:-.2px}
+.cuban span{font-size:12.5px; color:#E3CFA6; font-weight:700; line-height:1.5}
+.cuban .btn{margin-top:3px}
 .daytag{text-align:center; margin:6px 0 18px}
 .daytag .d1{font-size:13px; font-weight:900; letter-spacing:4px; color:var(--ink3)}
 .daytag .d2{font-size:40px; font-weight:900; letter-spacing:-1.5px; color:#fff; line-height:1.05}
@@ -1193,7 +1199,7 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
     </div>
   </div>
   <main class="pmain">
-    <div class="daytag"><div class="d1" id="ar-dayline">DAY —</div><div class="d2">TODAY</div></div>
+    <div class="daytag"><div class="d1" id="ar-dayline">DAY —</div><div class="d2" id="ar-daybig">TODAY</div></div>
     <div class="arena-grid">
       <div id="ar-left"></div>
       <div id="ar-right"></div>
@@ -1311,12 +1317,39 @@ function tickSoon(){
   const el = document.getElementById('soon-s'); if(!el) return;
   const t = (typeof curT === 'function') ? curT() : null;
   const ts = tourStartMs(t); if(ts == null) return;
-  const L = splitLeft(ts - Date.now());
+  const L = splitLeft(ts - nowMs());
   const p2 = n => String(n).padStart(2, '0');
   const put = (id, v)=>{ const e = document.getElementById(id); if(e) e.textContent = v; };
   put('soon-d', L.d); put('soon-h', p2(L.h)); put('soon-m', p2(L.m)); put('soon-s', p2(L.s));
   const hEl = document.getElementById('soon-head');
   if(hEl) hEl.textContent = soonHead(t, ts, L);
+}
+/* ---------- calendario sin días repetidos ----------
+   Si el calendario del torneo trae una fecha dos veces (pasa al editar el
+   plan a media jornada), todo lo que cuenta días se desfasa: el contador
+   "DAY x OF y" y, sobre todo, LA PREGUNTA DEL DÍA, porque se elige por la
+   posición del día en la lista. Una pregunta se perdería y el resto saldría
+   corrida. Aquí limpiamos los duplicados al recibir el torneo. */
+function dedupeDays(t){
+  try{
+    if(!t || !Array.isArray(t.days)) return t;
+    const vistos = {}, out = [];
+    t.days.forEach(d=>{
+      if(!d || !d.date) return;
+      if(vistos[d.date]){
+        /* si el repetido trae juego y el que guardamos no, nos quedamos con el bueno */
+        if(d.gameId && !vistos[d.date].gameId) Object.assign(vistos[d.date], d);
+        return;
+      }
+      vistos[d.date] = d; out.push(d);
+    });
+    out.sort((a,b)=> a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+    t.days = out;                      /* sin duplicados y en orden, siempre */
+    return t;
+  }catch(e){ return t; }
+}
+function dedupeAllDays(){
+  try{ (state.tournaments||[]).forEach(dedupeDays); }catch(e){}
 }
 function tKey(t){
   const p = tzParts(Date.now() - tourStartHour(t)*3600e3);
@@ -1777,7 +1810,7 @@ function migrateState(s){
     s.tournaments.push(Object.assign({id:'t'+Date.now().toString(36), results:(s.results||[])}, s.tournament));
     delete s.tournament; delete s.results;
   }
-  s.tournaments.forEach(t=>{ if(!t.id) t.id = 't'+Math.random().toString(36).slice(2,8); if(!Array.isArray(t.results)) t.results = []; });
+  s.tournaments.forEach(t=>{ if(!t.id) t.id = 't'+Math.random().toString(36).slice(2,8); if(!Array.isArray(t.results)) t.results = []; try{ dedupeDays(t); }catch(e){} });
 }
 /* ============================================================
    CLOUD SYNC — Supabase backend (Fase 2): shared tournaments,
@@ -2160,7 +2193,7 @@ async function cloudPull(){
     if(stamp !== CLOUD.m.stamp){
       const tours = await get('tournaments?select=*');
       const byTid = {};
-      tours.forEach(r=>{ if(r && r.tid && r.data) byTid[r.tid] = r.data; });
+      tours.forEach(r=>{ if(r && r.tid && r.data) byTid[r.tid] = dedupeDays(r.data); });
       const newTs = Object.keys(byTid).map(tid=>{
         const local = (state.tournaments||[]).find(x=> x.id===tid);
         const t = Object.assign({}, byTid[tid]);
@@ -7768,11 +7801,39 @@ function renderArena(){
   if(idx>=0) dayLabel = `DAY ${idx+1} OF ${days.length}`;
   else if(days.length && tKey(t) < days[0].date) dayLabel = 'STARTS SOON';
   else dayLabel = 'FINISHED';
-  $('#ar-day').textContent = dayLabel;
-  $('#ar-dayline').textContent = dayLabel + ' · ' + new Date().toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric'});
+  /* MIENTRAS RECUPERA UN DÍA, el encabezado tiene que decirlo. Antes seguía
+     diciendo "DAY 6 · Monday" mientras servía el juego del miércoles, y la
+     gente creía que ese era el juego de hoy. */
+  const _big = $('#ar-daybig');
+  if(cuDate){
+    const ci = days.findIndex(d=> d.date===cuDate);
+    const cg = (days.find(d=> d.date===cuDate) || {});
+    const cgn = cg.gameId ? (gameById(cg.gameId)||{}).name : '';
+    $('#ar-day').textContent = '⏰ CATCHING UP';
+    if(_big) _big.textContent = 'CATCHING UP';
+    $('#ar-dayline').textContent = 'Recovering ' + fmtDay(cuDate)
+      + (ci>=0 ? ' · day ' + (ci+1) + ' of ' + days.length : '')
+      + (cgn ? ' · ' + cgn : '')
+      + ' — this is NOT today\'s game';
+  } else {
+    $('#ar-day').textContent = dayLabel;
+    if(_big) _big.textContent = 'TODAY';
+    $('#ar-dayline').textContent = dayLabel + ' · ' + new Date(nowMs()).toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric'});
+  }
   $('#ar-code').innerHTML = `🔑 ${esc(t.code||'')}`;
   renderTodayCard(t);
   renderSide(t);
+  /* si su reloj está desfasado, se lo decimos: es la causa de que vea
+     un juego distinto al de los demás */
+  try{
+    if(Math.abs(CLOCK_SKEW) > 3600000 && !renderArena._avisoReloj){
+      renderArena._avisoReloj = true;
+      const dias = Math.round(Math.abs(CLOCK_SKEW) / 86400000);
+      toast(dias
+        ? ('⏰ Your device clock is off by ' + dias + ' day' + (dias===1?'':'s') + ' — we now use Bitso time, so your game matches everyone else')
+        : '⏰ Your device clock was off — we now use Bitso time');
+    }
+  }catch(e){}
   try{ iqAnnounce(t); }catch(e){}
 }
 function renderTodayCard(t){
@@ -7784,7 +7845,7 @@ function renderTodayCard(t){
     const _d0 = days[0].date;
     const _gd = days.filter(d=> d.gameId).length || days.length;
     const _ts = tourStartMs(t);
-    const _L  = splitLeft(_ts == null ? 0 : (_ts - Date.now()));
+    const _L  = splitLeft(_ts == null ? 0 : (_ts - nowMs()));
     const _p2 = n => String(n).padStart(2, '0');
     const _hd = soonHead(t, _ts, _L);
     box.innerHTML = `<div class="soonbox"><div class="in">
@@ -7861,6 +7922,11 @@ function renderTodayCard(t){
   })() : '';
   box.innerHTML = `
     ${_cu}
+    ${cuDate ? `<div class="cuban">
+      <b>⏰ You're playing a missed day — ${esc(fmtDay(cuDate))}</b>
+      <span>This is not today's game. Your score lands on that day's board, and today's game is still waiting for you after this.</span>
+      <button class="btn sm ghost" onclick="cuEnd()">Skip it — take me to today's game</button>
+    </div>` : ''}
     <div class="gherocard">
       <div class="ghero-art" style="background:${g.grad}">${ICONS[g.id]}
         <div class="cdtag">⌛ <span class="cdv">--:--:--</span></div>
