@@ -6214,7 +6214,7 @@ function beginGame(gid, mode, isRetry){
   if(locked){
     if(mode==='warmup' && (locked.w>0 || locked.real || locked.realStarted)){ toast('Practice already used — one per day.'); return; }
     if(mode!=='warmup' && !isRetry && (locked.real || locked.realStarted)){ toast('Your real run is done — one per day. 🎤 A joke buys the only replay.'); return; }
-    if(isRetry && (!locked.retried || locked.retryPlayed)){ toast('Second chance already used today.'); return; }
+    if(isRetry && !retryResumable(lockT)){ toast('Second chance already used today.'); return; }
   }
   run = { g, mode, score:0, final:undefined, over:false, retry:!!isRetry, cleanup:null, tLeft:g.dur||0, timerI:null, timed: g.dur>0 && hasLiveTour() };
   $('#ov-icon').innerHTML = ICONS[g.id];
@@ -6307,7 +6307,7 @@ function beginGame(gid, mode, isRetry){
     /* the moment the run truly starts, today's slot is spent — quitting won't refund it */
     if(locked){
       if(mode==='warmup') locked.w = (locked.w||0) + 1;
-      else if(isRetry) locked.retryPlayed = true;
+      else if(isRetry){ locked.retryStart = Date.now(); locked.retryTries = (locked.retryTries||0) + 1; }
       else { locked.realStarted = true; claimRun(); }   /* reclamo el turno del día en la nube: incógnito u otro equipo ya no sirve */
       savePlayer();
     }
@@ -7455,6 +7455,23 @@ function syncClaims(){
   });
   savePlayer();
 }
+/* ---------- segunda oportunidad PAGADA: rescate si se interrumpio ----------
+   El chiste ya se cobro y quedo publico en la cola. Si la partida nunca llego
+   al marcador (refresh, crash, se cerro la pestana), damos UN rescate dentro
+   de una ventana de cortesia. Dos arranques como maximo por un chiste. */
+const RETRY_GRACE_MS = 15*60*1000;
+function retryResumable(t){
+  try{
+    if(!t) return false;
+    const d = daily(t);
+    if(!d.retried) return false;      /* no ha pagado el chiste */
+    if(d.retryPlayed) return false;   /* ya la jugo y llego al marcador */
+    const tries = d.retryTries || 0;
+    if(tries < 1) return true;        /* pago y todavia no arranca */
+    if(tries >= 2) return false;      /* ya uso su rescate */
+    return !!d.retryStart && (Date.now() - d.retryStart) < RETRY_GRACE_MS;
+  }catch(e){ return false; }
+}
 function daily(t){
   player.daily = player.daily || {};
   const k = (t.code||'') + '|' + effK(t);
@@ -8023,7 +8040,7 @@ function renderTodayCard(t){
         ${mine
           ? `<div class="mystat">You're <b>#${mine.rank}</b> today with <b>${g.fmt(mine.value)}</b> (+${mine.pts} pts${mine.tags && mine.tags.length ? ' · ' + mine.tags.join(' · ') : ''}).${d.retried?'':' Not happy? One replay is on the table — it costs a joke. 🎤'}</div>`
           : (d.real || d.realStarted)
-            ? `<div class="mystat">Your run isn't on the board — the Bitso question got you. ${d.retried?'Tomorrow is a fresh game.':'A joke on stage can still save it. 🎤'}</div>`
+            ? `<div class="mystat">Your run isn't on the board — the Bitso question got you. ${retryResumable(t)?'Your second chance got cut short — pick it up below, the joke is already paid. 🎤':(d.retried?'Tomorrow is a fresh game.':'A joke on stage can still save it. 🎤')}</div>`
             : `<div class="mystat">You haven't played today. One practice run if you want it, then <b>the real one counts</b>. 🔥</div>`}
         <div class="gherorow playrow" style="margin-top:24px">
           ${!(d.real || d.realStarted)
@@ -8032,7 +8049,10 @@ function renderTodayCard(t){
               ((player.allin && player.allin[t.id]) ? '' : `<button class="btn allinbtn" onclick="askAllin()" title="Once per tournament: multiply today's points — you only get ONE">🃏 All-in ×${(t.evDef && t.evDef.allin) || 2}</button>`)
             : !d.retried
               ? `<button class="btn ghost" onclick='showSecondChance("${g.id}")'>🎤 Replay once — costs a joke</button>`
-              : `<span class="pill dim">✅ Done for today · next game in <span class="cdv">--:--:--</span></span>`}
+              : retryResumable(t)
+                ? `<button class="btn big" onclick='beginGame("${g.id}", "real", true)'>▶ Resume your second chance</button>
+                   <span class="pill neon" title="Your joke is already in the queue — this run costs nothing extra">🎤 already paid</span>`
+                : `<span class="pill dim">✅ Done for today · next game in <span class="cdv">--:--:--</span></span>`}
         </div>`)(daily(t))}
         ${(()=>{
           if(!rows.length) return '';
@@ -8467,7 +8487,7 @@ function showScoreScreen(g, val, retry){
   lastRun = { gid:g.id, val, retry };
   if(typeof run !== 'undefined' && run && run.tbVal != null) lastRun.tb = run.tbVal;
   const t = curT();
-  if(t){ const d = daily(t); d.real = true; if(retry) d.retried = true; savePlayer(); }
+  if(t){ const d = daily(t); d.real = true; if(retry){ d.retried = true; d.retryPlayed = true; } savePlayer(); }
   const disp = val===null ? 'DNF' : g.fmt(val);
   const pb = player.best[g.id]===val && val!==null;
   modal(`
