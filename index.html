@@ -7533,6 +7533,18 @@ function retryResumable(t){
     return !!d.retryStart && (Date.now() - d.retryStart) < RETRY_GRACE_MS;
   }catch(e){ return false; }
 }
+function myTriviaToday(t){
+  /* 'ok' acerto, 'fail' fallo, null no contesto. Sirve para NO acusar de
+     fallar la pregunta a quien la contesto bien y solo esta esperando que su
+     fila termine de aterrizar. */
+  try{
+    if(!t || !player || !player.name) return null;
+    const dk = effK(t);
+    const mias = (state.triviaLog||[]).filter(e=> e && e.tid===t.id && e.date===dk && e.name===player.name);
+    if(!mias.length) return null;
+    return mias.some(e=> e.ok) ? 'ok' : 'fail';
+  }catch(e){ return null; }
+}
 function daily(t){
   player.daily = player.daily || {};
   const k = (t.code||'') + '|' + effK(t);
@@ -8101,7 +8113,16 @@ function renderTodayCard(t){
         ${mine
           ? `<div class="mystat">You're <b>#${mine.rank}</b> today with <b>${g.fmt(mine.value)}</b> (+${mine.pts} pts${mine.tags && mine.tags.length ? ' · ' + mine.tags.join(' · ') : ''}).${d.retried?'':' Not happy? One replay is on the table — it costs a joke. 🎤'}</div>`
           : (d.real || d.realStarted)
-            ? `<div class="mystat">Your run isn't on the board — the Bitso question got you. ${retryResumable(t)?'Your second chance got cut short — pick it up below, the joke is already paid. 🎤':(d.retried?'Tomorrow is a fresh game.':'A joke on stage can still save it. 🎤')}</div>`
+            ? (()=>{
+                const q = myTriviaToday(t);
+                /* Antes este mensaje culpaba SIEMPRE a la pregunta, incluso a
+                   quien la habia contestado bien y solo estaba esperando que su
+                   fila terminara de subir. Eso hacia que la gente reportara
+                   puntos perdidos que en realidad si estaban. */
+                if(q === 'ok') return `<div class="mystat">You nailed today's question ✅ — your run is still landing on the board. Give it a few seconds, or refresh if it doesn't show.</div>`;
+                if(q === 'fail') return `<div class="mystat">Your run isn't on the board — the Bitso question got you. ${retryResumable(t)?'Your second chance got cut short — pick it up below, the joke is already paid. 🎤':(d.retried?'Tomorrow is a fresh game.':'A joke on stage can still save it. 🎤')}</div>`;
+                return `<div class="mystat">Your run didn't make it to the board — the Bitso question was never answered. ${retryResumable(t)?'Your second chance got cut short — pick it up below, the joke is already paid. 🎤':(d.retried?'Tomorrow is a fresh game.':'A joke on stage can still save it. 🎤')}</div>`;
+              })()
             : `<div class="mystat">You haven't played today. One practice run if you want it, then <b>the real one counts</b>. 🔥</div>`}
         <div class="gherorow playrow" style="margin-top:24px">
           ${!(d.real || d.realStarted)
