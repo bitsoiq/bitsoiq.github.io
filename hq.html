@@ -2102,7 +2102,16 @@ function slimState(){
       chat: (t.chat||[]).slice(-80),
     });
   });
-  c.triviaLog = (state.triviaLog||[]).slice(-2000);
+  /* EL REGISTRO DE RESPUESTAS ES DE DONDE SALE EL STREAK, y el streak activa
+     Diamond Hands (+50%). El torneo lleva 1,396 respuestas y crece ~200 al dia,
+     asi que el recorte viejo tiraba las mas antiguas del disco, y como la marca
+     de sync decia 'ya las tengo', no volvian nunca. Resultado: streaks
+     calculados con historial incompleto.
+     Arreglo: guardamos MUCHAS mas, pero sin el texto de la pregunta, que es
+     redundante (se reconstruye del banco por qid) y es lo que pesaba. */
+  c.triviaLog = (state.triviaLog||[]).slice(-8000).map(e=> ({
+    tid:e.tid, date:e.date, name:e.name, qid:e.qid, ok:!!e.ok, ts:e.ts
+  }));
   return c;
 }
 function saveState(){

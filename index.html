@@ -2489,7 +2489,16 @@ function slimState(){
       chat: (t.chat||[]).slice(-80),
     });
   });
-  c.triviaLog = (state.triviaLog||[]).slice(-1200);
+  /* EL REGISTRO DE RESPUESTAS ES DE DONDE SALE EL STREAK, y el streak activa
+     Diamond Hands (+50%). Guardar solo las ultimas 1200 ya no alcanzaba: el
+     torneo lleva 1,396 respuestas, asi que las mas viejas se caian del disco
+     y como la marca de sync decia "ya las tengo", no volvian nunca. Resultado:
+     streaks calculados con el historial incompleto.
+     Arreglo: guardamos MUCHAS mas, pero sin el texto de la pregunta, que es
+     redundante (se reconstruye del banco por qid) y es lo que pesaba. */
+  c.triviaLog = (state.triviaLog||[]).slice(-8000).map(e=> ({
+    tid:e.tid, date:e.date, name:e.name, qid:e.qid, ok:!!e.ok, ts:e.ts
+  }));
   /* El roster se guarda ENTERO, con fotos. Son la experiencia del jugador:
      si alguien escribe en el chat, su cara tiene que estar ahí. Si no cupiera,
      el respaldo de saveState recorta y además olvida la marca de sincronización,
