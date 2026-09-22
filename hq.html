@@ -1893,6 +1893,36 @@ async function cloudPull(){
   let changed = false;
   try{
     const get = p => cfetch(p).then(r=> r.ok ? r.json() : []).catch(()=>[]);
+    /* EL SERVIDOR CORTA EN 1000 FILAS, siempre, aunque pidas limit=2000 o 4000.
+       Con mas de 1200 resultados eso dejaba fuera los dias mas recientes y el
+       tablero decia "1 jugador hoy". Pedimos por paginas hasta acabar. */
+    const PAGINA = 1000;
+    const getPaged = async (base, order)=>{
+      let out = [], off = 0;
+      for(let i=0;i<30;i++){
+        const sep = base.indexOf('?') >= 0 ? '&' : '?';
+        const chunk = await get(base + sep + 'order=' + order + '&limit=' + PAGINA + '&offset=' + off);
+        if(!Array.isArray(chunk) || !chunk.length) break;
+        out = out.concat(chunk);
+        if(chunk.length < PAGINA) break;
+        off += PAGINA;
+      }
+      return out;
+    };
+    const getCursor = async (make, campo, desde)=>{
+      let out = [], cur = desde;
+      for(let i=0;i<30;i++){
+        const chunk = await get(make(cur));
+        if(!Array.isArray(chunk) || !chunk.length) break;
+        out = out.concat(chunk);
+        if(chunk.length < PAGINA) break;
+        const ult = chunk[chunk.length-1];
+        const sig = ult && ult[campo];
+        if(sig == null || sig === cur) break;
+        cur = sig;
+      }
+      return out;
+    };
     CLOUD.m = CLOUD.m || { stamp:'', chatTs:0, trivId:0, slowAt:0 };
     const slow = Date.now() - CLOUD.m.slowAt > 600000;  /* red de seguridad: barrido completo cada 10 min */
 
@@ -1970,12 +2000,35 @@ async function cloudPull(){
       const d = new Date(Date.now() - k*86400e3);
       dkeys.push(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'));
     }
+    /* El torneo tambien manda su dia en hora de Mexico, por si el reloj de
+       este equipo esta en otro pais y los dos de arriba no lo cubren. */
+    try{
+      (state.tournaments||[]).forEach(t=>{ const k = tKey(t); if(k && dkeys.indexOf(k) < 0) dkeys.push(k); });
+    }catch(e){}
+    /* PRIMERA VUELTA DE LA SESION: el Admin necesita el historial completo, no
+       solo hoy y ayer. Sin esto los dias anteriores salian vacios en HQ hasta
+       el barrido lento (hasta 10 minutos despues) y parecia que se habian
+       perdido los puntos. index.html ya lo hacia; HQ no. */
+    const primeraVez = !CLOUD.m._boot;
+    CLOUD.m._boot = 1;
+    if(primeraVez){
+      try{
+        (state.tournaments||[]).forEach(t=>{
+          const hoy = tKey(t);
+          (t.days||[]).forEach(d=>{
+            if(d && d.gameId && d.date <= hoy && dkeys.indexOf(d.date) < 0) dkeys.push(d.date);
+          });
+        });
+      }catch(e){}
+    }
     /* SOLO LO NUEVO: pedimos las filas modificadas desde la última vez.
        Cada resultado viaja UNA vez en lugar de re-descargar el board entero cada tick. */
-    let rq;
-    if(CLOUD.m.resAt && !slow) rq = 'results?select=*&updated_at=gt.' + encodeURIComponent(CLOUD.m.resAt) + '&order=updated_at.asc&limit=2000';
-    else rq = slow ? 'results?select=*' : 'results?select=*&date=in.(' + dkeys.join(',') + ')';
-    let results = await get(rq);
+    let results;
+    if(CLOUD.m.resAt && !slow && !primeraVez) results = await getCursor(
+      c => 'results?select=*&updated_at=gt.' + encodeURIComponent(c) + '&order=updated_at.asc&limit=' + PAGINA,
+      'updated_at', CLOUD.m.resAt);
+    else if(slow) results = await getPaged('results?select=*', 'date.asc,name.asc');
+    else results = await getPaged('results?select=*&date=in.(' + dkeys.join(',') + ')', 'date.asc,name.asc');
     if(!Array.isArray(results)) results = [];
     if(results.length && results[0].updated_at === undefined && CLOUD.m.resAt){
       CLOUD.m.resAt = null;                                  /* la columna aún no existe: volvemos al modo anterior */
@@ -2010,7 +2063,7 @@ async function cloudPull(){
     if(slow){
       const [customs, trivia] = await Promise.all([
         get('custom_games?select=*'),
-        get('trivia_log?select=*&id=gt.' + (CLOUD.m.trivId||0) + '&order=id.asc&limit=4000')
+        getCursor(c => 'trivia_log?select=*&id=gt.' + (c||0) + '&order=id.asc&limit=' + PAGINA, 'id', (CLOUD.m.trivId||0))
       ]);
       if(!CLOUD.admin && customs.length && JSON.stringify(customs.map(c=>c.data)) !== JSON.stringify(state.customGames||[])){
         state.customGames = customs.map(c=> c.data).filter(Boolean); changed = true;
@@ -8232,10 +8285,25 @@ async function downloadBackup(){
   /* completamos con lo que viva en la nube y no esté en memoria */
   if(CLOUD.on){
     const get = p => cfetch(p).then(r=> r.ok ? r.json() : []).catch(()=> []);
+    /* El respaldo NO puede salir cortado: el servidor devuelve 1000 filas como
+       maximo, asi que cada tabla se baja por paginas. Antes un backup de mas de
+       1000 resultados salia incompleto sin avisar. */
+    const PAG = 1000;
+    const todo = async (tabla, order)=>{
+      let out = [], off = 0;
+      for(let i=0;i<60;i++){
+        const chunk = await get(tabla + '?select=*&order=' + order + '&limit=' + PAG + '&offset=' + off);
+        if(!Array.isArray(chunk) || !chunk.length) break;
+        out = out.concat(chunk);
+        if(chunk.length < PAG) break;
+        off += PAG;
+      }
+      return out;
+    };
     try{
       const [res, chat, triv, ppl, mails] = await Promise.all([
-        get('results?select=*'), get('chat?select=*'), get('trivia_log?select=*'),
-        get('players?select=*'), get('player_emails?select=*')
+        todo('results','date.asc,name.asc'), todo('chat','ts.asc'), todo('trivia_log','id.asc'),
+        todo('players','name.asc'), todo('player_emails','name.asc')
       ]);
       pack.cloud = { results:res, chat:chat, trivia_log:triv, players:ppl, player_emails:mails };
     }catch(e){}

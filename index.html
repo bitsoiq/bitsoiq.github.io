@@ -2216,6 +2216,40 @@ async function cloudPull(){
   let changed = false;
   try{
     const get = p => cfetch(p).then(r=> r.ok ? r.json() : []).catch(()=>[]);
+    /* EL SERVIDOR CORTA EN 1000 FILAS, siempre, aunque pidas limit=2000.
+       Con el torneo ya pasando de 1200 resultados, la consulta de apertura
+       devolvia 1000 y los dias mas recientes se caian completos: el tablero
+       decia "1 jugador hoy". Estas dos funciones piden por paginas hasta que
+       ya no queda nada. */
+    const PAGINA = 1000;
+    const getPaged = async (base, order)=>{
+      let out = [], off = 0;
+      for(let i=0;i<30;i++){
+        const sep = base.indexOf('?') >= 0 ? '&' : '?';
+        const chunk = await get(base + sep + 'order=' + order + '&limit=' + PAGINA + '&offset=' + off);
+        if(!Array.isArray(chunk) || !chunk.length) break;
+        out = out.concat(chunk);
+        if(chunk.length < PAGINA) break;
+        off += PAGINA;
+      }
+      return out;
+    };
+    /* Para lo incremental usamos cursor en vez de offset: nadie se cuela ni se
+       repite aunque entren filas nuevas mientras paginamos. */
+    const getCursor = async (make, campo, desde)=>{
+      let out = [], cur = desde;
+      for(let i=0;i<30;i++){
+        const chunk = await get(make(cur));
+        if(!Array.isArray(chunk) || !chunk.length) break;
+        out = out.concat(chunk);
+        if(chunk.length < PAGINA) break;
+        const ult = chunk[chunk.length-1];
+        const sig = ult && ult[campo];
+        if(sig == null || sig === cur) break;
+        cur = sig;
+      }
+      return out;
+    };
     CLOUD.m = CLOUD.m || syncLoad() || { stamp:'', chatTs:0, trivId:0, slowAt:0 };
     /* AUTO-REPARACIÓN: si venimos con marca de "ya lo tengo todo" pero el tablero
        local está vacío, la marca miente (el disco se limpió). La borramos para
@@ -2258,12 +2292,15 @@ async function cloudPull(){
 
     /* --- roster: SOLO los jugadores nuevos o que cambiaron su foto.
        Con 400 personas, volver a bajar el roster completo cada alta serían megas de más. --- */
-    const pq = CLOUD.m.plAt
-      ? 'players?select=*&updated_at=gt.' + encodeURIComponent(CLOUD.m.plAt) + '&order=updated_at.asc&limit=500'
-      : 'players?select=*&order=updated_at.asc&limit=1000';
+    const rosterCompleto = !CLOUD.m.plAt;
+    const pq = rosterCompleto
+      ? 'players?select=*&order=updated_at.asc&limit=1'          /* solo para probar el permiso */
+      : 'players?select=*&updated_at=gt.' + encodeURIComponent(CLOUD.m.plAt) + '&order=updated_at.asc&limit=500';
     const pplR = await cfetch(pq).catch(()=> null);
     if(pplR && pplR.ok === false) CLOUD.roster = false;
-    const ppl = (pplR && pplR.ok) ? await pplR.json().catch(()=> []) : [];
+    let ppl = (pplR && pplR.ok) ? await pplR.json().catch(()=> []) : [];
+    /* el roster completo tambien pasa de 1000 en cuanto crezca: por paginas */
+    if(rosterCompleto && pplR && pplR.ok) ppl = await getPaged('players?select=*', 'updated_at.asc');
     if(Array.isArray(ppl) && ppl.length){
       CLOUD.roster = true;
       const ros = {};
@@ -2351,10 +2388,12 @@ async function cloudPull(){
     const primera = !CLOUD.m._boot;
     CLOUD.m._boot = 1;
     let rq;
-    if(slow) rq = 'results?select=*';
-    else if(primera || !CLOUD.m.resAt) rq = 'results?select=*&date=in.(' + dkeys.join(',') + ')';
-    else rq = 'results?select=*&updated_at=gt.' + encodeURIComponent(CLOUD.m.resAt) + '&order=updated_at.asc&limit=2000';
-    let results = await get(rq);
+    let results;
+    if(slow) results = await getPaged('results?select=*', 'date.asc,name.asc');
+    else if(primera || !CLOUD.m.resAt) results = await getPaged('results?select=*&date=in.(' + dkeys.join(',') + ')', 'date.asc,name.asc');
+    else results = await getCursor(
+      c => 'results?select=*&updated_at=gt.' + encodeURIComponent(c) + '&order=updated_at.asc&limit=' + PAGINA,
+      'updated_at', CLOUD.m.resAt);
     if(!Array.isArray(results)) results = [];
     const sinColumna = results.length && results[0].updated_at === undefined && CLOUD.m.resAt;
     if(sinColumna) CLOUD.m.resAt = null;   /* la columna aún no existe: volvemos al modo anterior */
@@ -2402,7 +2441,7 @@ async function cloudPull(){
     if(slow){
       const [customs, trivia] = await Promise.all([
         get('custom_games?select=*'),
-        get('trivia_log?select=*&id=gt.' + (CLOUD.m.trivId||0) + '&order=id.asc&limit=4000')
+        getCursor(c => 'trivia_log?select=*&id=gt.' + (c||0) + '&order=id.asc&limit=' + PAGINA, 'id', (CLOUD.m.trivId||0))
       ]);
       if(!CLOUD.admin && customs.length && JSON.stringify(customs.map(c=>c.data)) !== JSON.stringify(state.customGames||[])){
         state.customGames = customs.map(c=> c.data).filter(Boolean); changed = true;
@@ -8404,7 +8443,7 @@ async function pointsDayToggle(d){
     const hay = (t.results||[]).some(r=> r.date===pointsDayOpen && r.value!=null);
     if(!hay){
       try{
-        const r = await cfetch('results?select=*&date=eq.' + encodeURIComponent(pointsDayOpen));
+        const r = await cfetch('results?select=*&date=eq.' + encodeURIComponent(pointsDayOpen) + '&order=name.asc&limit=1000');
         if(r && r.ok){
           const filas = await r.json();
           let nuevos = 0;
