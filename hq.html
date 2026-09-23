@@ -5935,7 +5935,7 @@ const HINT = g => {
    navegador esta corriendo, recargamos UNA sola vez con la direccion cambiada,
    que es lo unico que obliga al navegador a soltar su copia vieja.
    ============================================================ */
-const BUILD_TS = '2026-09-23T17:46:58Z';
+const BUILD_TS = '2026-09-23T18:11:18Z';
 (function autoActualizar(){
   try{
     if(sessionStorage.getItem('biq_upd')) return;      /* ya recargamos en esta sesion */
@@ -5989,8 +5989,21 @@ const BUILD_TS = '2026-09-23T17:46:58Z';
       }).catch(()=>{});
     }catch(e){}
   }
-  window.addEventListener('error', e => reportar('error', e && e.message, (e && e.filename ? e.filename.split('/').pop() : '') + ':' + (e && e.lineno)));
-  window.addEventListener('unhandledrejection', e => reportar('promesa', e && e.reason && (e.reason.message || e.reason), ''));
+  /* Las extensiones del navegador (carteras cripto, bloqueadores) lanzan sus
+     propios errores que no tienen nada que ver con el juego. Si no los
+     filtramos, tapan las senales de verdad. */
+  const RUIDO = /metamask|ethereum|web3|solana|phantom|coinbase wallet|extension context|chrome-extension|moz-extension|ResizeObserver loop/i;
+  const esRuido = m => { try{ return RUIDO.test(String(m||'')); }catch(e){ return false; } };
+  window.addEventListener('error', e => {
+    const m = e && e.message;
+    if(esRuido(m) || esRuido(e && e.filename)) return;
+    reportar('error', m, (e && e.filename ? e.filename.split('/').pop() : '') + ':' + (e && e.lineno));
+  });
+  window.addEventListener('unhandledrejection', e => {
+    const m = e && e.reason && (e.reason.message || e.reason);
+    if(esRuido(m)) return;
+    reportar('promesa', m, '');
+  });
   window.__reportar = reportar;   /* para reportar a mano desde el codigo */
 })();
 const Freezer = (()=>{
@@ -6151,12 +6164,24 @@ function beginGame(gid, mode, isRetry){
         Freezer.rt.setTimeout(()=>{ if(run && phase === 'go') launch(); }, 4000);
         /* Si a los 12 segundos seguimos congelados, algo salio muy mal:
            lo reportamos para poder verlo desde HQ. */
+        /* PERRO GUARDIAN DEL ARRANQUE, ahora RESCATA en vez de solo avisar.
+           Si 6 segundos despues del GO la partida sigue con el tiempo detenido,
+           la descongelamos a la fuerza y quitamos la capa invisible. Vale mil
+           veces mas que dejar al jugador viendo una imagen muerta. */
         Freezer.rt.setTimeout(()=>{
           try{
-            if(run && Freezer.frozen && window.__reportar)
-              window.__reportar('congelado', 'el juego siguio congelado 12s despues del GO', 'fase=' + phase);
+            if(!run || !Freezer.frozen) return;
+            if(window.__reportar)
+              window.__reportar('congelado', 'seguia congelado 6s despues del GO, lo descongele a la fuerza', 'fase=' + phase);
+            try{ if(hint){ hint.remove(); hint = null; } }catch(e){}
+            try{ gate.remove(); }catch(e){}
+            try{ Freezer.unfreeze(); }catch(e){}
+            /* si unfreeze no pudo (el Freezer ya estaba desinstalado por fuera),
+               desinstalamos: eso devuelve los relojes reales a toda la app */
+            try{ if(Freezer.frozen) Freezer.uninstall(); }catch(e){}
+            try{ toast('Starting your run…'); }catch(e){}
           }catch(e){}
-        }, 12000);
+        }, 6000);
       }
     })();
   }
