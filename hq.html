@@ -3775,7 +3775,7 @@ const GAMES = [
 { id:'ball', name:'Speed Ball', tag:'The track twists. The worlds change.', dur:0,
   unit:'meters', lowerBetter:false, fmt:v=>fmtN(v)+' m',
   grad:'linear-gradient(160deg,#1A1440,#0D0B1E)',
-  how:'No clicking — move your mouse (or finger, or ← → keys) to steer. The track curves left and right, dives through glowing tunnels and shifts worlds as you go. You get a 2-second safe start, then: dodge the cubes, ride the pink boost pads, survive the speed.',
+  how:'No clicking — move your mouse left and right to steer. The track curves left and right, dives through glowing tunnels and shifts worlds as you go. You get a 2-second safe start, then: dodge the cubes, ride the pink boost pads, survive the speed.',
   run(stage, api){
     const {cv, ctx, W, H} = makeCanvas(stage, 900, 560);
     const HOR = H*0.13, PY = H-80, SEG = 550;
@@ -3797,32 +3797,35 @@ const GAMES = [
     /* mismo limite que los obstaculos: sin esquina invencible */
     const LANE = 0.85;
     /* el volante usa TODO el ancho del canvas, no solo la franja central */
-    const onMove = e=>{ const q = ptr(cv,e); tx = clamp(((q.x - W/2)/(W/2))*LANE, -LANE, LANE); };
-    /* ESCUCHAMOS EN TODA LA VENTANA, no solo encima del canvas.
-       Antes, si el puntero estaba sobre el marcador, un poco afuera del canvas
-       o pegado al borde de la pantalla, no llegaba ningun evento y la bola no
-       se movia por mas que movieras el mouse. ptr() ya traduce a coordenadas
-       del canvas y el clamp resuelve lo que cae afuera. */
-    cv.addEventListener('pointermove', onMove);
-    cv.addEventListener('pointerdown', onMove);
+    /* ========== EL VOLANTE ES LA PANTALLA COMPLETA ==========
+       Antes traduciamos la posicion del mouse a coordenadas del canvas, y eso
+       dependia del ancho dibujado, de la densidad de pixeles y del rect del
+       elemento. Ahi se rompia en algunos equipos: el volante se quedaba clavado
+       y la bola no respondia.
+       Ahora solo importa una cosa: en que parte de la pantalla esta el cursor,
+       de izquierda a derecha. Borde izquierdo = todo a la izquierda, borde
+       derecho = todo a la derecha, centro = derecho. Sin rect, sin dpr, sin
+       canvas de por medio. */
+    const volante = cx => {
+      const w = window.innerWidth || document.documentElement.clientWidth || 1;
+      return clamp(((cx / w) - 0.5) * 2 * LANE, -LANE, LANE);
+    };
+    const onMove = e=>{
+      const cx = (e.touches && e.touches[0]) ? e.touches[0].clientX
+               : (e.clientX != null ? e.clientX : null);
+      if(cx == null) return;
+      tx = volante(cx);
+    };
+    /* escuchamos de las tres formas: puntero, mouse clasico y tacto.
+       Si una falla en algun navegador, las otras dos siguen dirigiendo. */
     window.addEventListener('pointermove', onMove, {passive:true});
     window.addEventListener('pointerdown', onMove, {passive:true});
-    /* En celular el dedo no "flota": si tocas y sueltas no hay pointermove.
-       Manteniendo el dedo en un lado, la bola se va hacia ese lado. */
-    let dedo = 0, dedoI = null;
-    const abajo = e=>{ const q = ptr(cv,e); dedo = q.x < W/2 ? -1 : 1;
-      if(!dedoI) dedoI = setInterval(()=>{ if(dedo) tx = clamp(tx + dedo*0.055, -LANE, LANE); }, 32); };
-    const arriba = ()=>{ dedo = 0; };
-    cv.addEventListener('touchstart', abajo, {passive:true});
-    cv.addEventListener('touchmove', abajo, {passive:true});
-    window.addEventListener('touchend', arriba, {passive:true});
-    window.addEventListener('touchcancel', arriba, {passive:true});
-    /* keyboard fallback so the run always steers, mouse or not */
-    const onKey = e=>{
-      if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A'){ e.preventDefault(); tx = clamp(tx-0.34, -LANE, LANE); }
-      if(e.key==='ArrowRight'||e.key==='d'||e.key==='D'){ e.preventDefault(); tx = clamp(tx+0.34, -LANE, LANE); }
-    };
-    window.addEventListener('keydown', onKey);
+    window.addEventListener('mousemove',   onMove, {passive:true});
+    window.addEventListener('touchstart',  onMove, {passive:true});
+    window.addEventListener('touchmove',   onMove, {passive:true});
+    cv.addEventListener('pointermove', onMove);
+    cv.addEventListener('pointerdown', onMove);
+    /* sin flechas: el mouse es el unico volante, mas simple de explicar */
     function spawn(){
       const zMax = objs.length ? Math.max(...objs.map(o=>o.z)) : 0;
       if(zMax < 680){
@@ -3949,12 +3952,11 @@ const GAMES = [
     raf = requestAnimationFrame(loop);
     return ()=>{
       cancelAnimationFrame(raf);
-      window.removeEventListener('keydown', onKey);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerdown', onMove);
-      window.removeEventListener('touchend', arriba);
-      window.removeEventListener('touchcancel', arriba);
-      if(dedoI) clearInterval(dedoI);
+      window.removeEventListener('mousemove',   onMove);
+      window.removeEventListener('touchstart',  onMove);
+      window.removeEventListener('touchmove',   onMove);
     };
   }
 },
@@ -5891,7 +5893,7 @@ const QUICK = {
   wall:    'Tap to hop wall to wall (+1 each). Dodge the growing spikes.',
   numbers: 'Tap the balls 1 → 12 in order, fast. Clear the board for +5.',
   center:  'Tap when the needle crosses the green center. 5 shots, best average wins.',
-  ball:    'Steer with your mouse. Dodge the cubes, ride the pink boost pads.',
+  ball:    'Move your mouse left and right to steer. Dodge the cubes, ride the pink boost pads.',
   flow:    'Drag pipes between matching dots — no crossing, fill every cell.',
   archery: 'Hold to draw, put the dashed ring on the center, release. Bullseye = 10.',
   hopper:  'Move your mouse so the ball lands on the next pad. Don’t miss.',
@@ -5902,7 +5904,7 @@ const QUICK = {
 const quickHow = g => QUICK[g.id] || ((g.how||'').split('. ')[0] + '.') || g.tag || '';
 const HINT = g => {
   const K = { lane:'PRESS ← OR → TO START', arrows:'PRESS ANY ARROW TO START', jaywalk:'TAP OR PRESS ↑ TO START',
-              ball:'TAP TO START, THEN STEER WITH YOUR MOUSE', hopper:'TAP TO START, THEN FOLLOW WITH YOUR MOUSE',
+              ball:'TAP TO START, THEN MOVE YOUR MOUSE LEFT AND RIGHT', hopper:'TAP TO START, THEN FOLLOW WITH YOUR MOUSE',
               blade:'TAP TO START, THEN BALANCE WITH YOUR MOUSE', catch:'TAP TO START, THEN SLIDE THE BASKET' };
   return '👆 ' + (K[g.id] || 'TAP OR PRESS ANY KEY TO START');
 };
