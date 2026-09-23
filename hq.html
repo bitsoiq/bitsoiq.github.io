@@ -2647,7 +2647,7 @@ const GAMES = [
       api.finish(Math.floor(dist), 750);
     }
     function loop(now){
-      const dt = Math.min(0.05,(now-lastT)/1000); lastT = now;
+      const dt = Math.max(0, Math.min(0.05,(now-lastT)/1000)); lastT = now;
       if(!dead){
         speed += dt*2.4; dist += speed*dt; api.set(Math.floor(dist));
         obs.forEach(o=> o.z -= speed*dt*10);
@@ -2724,7 +2724,7 @@ const GAMES = [
     cv.addEventListener('pointermove', onMove);
     cv.addEventListener('pointerdown', onMove);
     function loop(now){
-      const dt = Math.min(0.05,(now-lastT)/1000); lastT = now; t += dt;
+      const dt = Math.max(0, Math.min(0.05,(now-lastT)/1000)); lastT = now; t += dt;
       bx += (tx-bx)*Math.min(1,dt*18);
       spawnT -= dt;
       if(spawnT<=0){
@@ -3067,7 +3067,7 @@ const GAMES = [
       api.finish(floors, 700);
     }
     function loop(now){
-      const dt = Math.min(0.05,(now-lastT)/1000); lastT = now;
+      const dt = Math.max(0, Math.min(0.05,(now-lastT)/1000)); lastT = now;
       t += dt;
       cam += ((Math.max(0, floors-3)*BH) - cam)*Math.min(1, dt*5);
       const bg = ctx.createLinearGradient(0,0,0,H);
@@ -3352,7 +3352,7 @@ const GAMES = [
     };
     window.addEventListener('keydown', onKey);
     function loop(now){
-      const dt = Math.min(0.05,(now-lastT)/1000); lastT = now;
+      const dt = Math.max(0, Math.min(0.05,(now-lastT)/1000)); lastT = now;
       if(!dead){
         speed += dt*6;                       // constant ramp too
         tiles.forEach(t=> t.y += speed*dt);
@@ -3449,7 +3449,7 @@ const GAMES = [
     cv.addEventListener('pointerdown', toggle);
     window.addEventListener('keydown', onKey);
     function loop(now){
-      const dt = Math.min(0.05,(now-lastT)/1000); lastT = now;
+      const dt = Math.max(0, Math.min(0.05,(now-lastT)/1000)); lastT = now;
       const th = ZTH[Math.floor(score/10)%ZTH.length];
       if(!dead){
         /* keeps accelerating with your score — never a boring cruise */
@@ -3570,7 +3570,7 @@ const GAMES = [
       api.finish(score, 700);
     }
     function loop(now){
-      const dt = Math.min(0.05,(now-lastT)/1000); lastT = now;
+      const dt = Math.max(0, Math.min(0.05,(now-lastT)/1000)); lastT = now;
       if(!dead){
         vy += 1500*dt;
         x += vx*dt; y += vy*dt;
@@ -3730,7 +3730,7 @@ const GAMES = [
     cv.addEventListener('pointerdown', tap);
     window.addEventListener('keydown', onKey);
     function loop(now){
-      const dt = Math.min(0.05,(now-lastT)/1000); lastT = now;
+      const dt = Math.max(0, Math.min(0.05,(now-lastT)/1000)); lastT = now;
       if(!done){
         p += dirn*v*dt;
         if(p>1){ p=1; dirn=-1; } if(p<0){ p=0; dirn=1; }
@@ -3786,8 +3786,14 @@ const GAMES = [
       {sky1:'#1C0A04', sky2:'#57230F', line:'rgba(255,159,28,.6)',  obst:'#FF9F1C', sun:'#FFD449'},
       {sky1:'#02140A', sky2:'#0E4A26', line:'rgba(61,220,100,.55)', obst:'#3DDC64', sun:'#B3E24B'},
     ];
-    const segType = d => TYPES[Math.floor(d/SEG) % TYPES.length];
-    const themeAt = d => THEMES[Math.floor(d/SEG) % THEMES.length];
+    /* INDICE A PRUEBA DE NEGATIVOS Y NaN.
+       Justo al descongelar, el navegador puede entregar un instante anterior al
+       frame previo. Eso hacia dt negativo, dist se iba por debajo de cero,
+       THEMES[-1] era undefined y leer th.sky1 MATABA el bucle: la partida se
+       quedaba pintada y muerta. Esto es lo que congelaba el juego. */
+    const idxSeg = (d, n) => { const k = Math.floor((isFinite(d) ? d : 0) / SEG) % n; return ((k % n) + n) % n; };
+    const segType = d => TYPES[idxSeg(d, TYPES.length)];
+    const themeAt = d => THEMES[idxSeg(d, THEMES.length)];
     let px = 0, tx = 0, dist = 0, speed = 58, boost = 0, curve = 0, dead = false, raf = 0, flash = 0, lastT = 0;
     let grace = 2.0;   // seconds of spawn protection at the start — no instant deaths
     let objs = [];  // {z, xr, boost}
@@ -3840,13 +3846,13 @@ const GAMES = [
     function crash(){ dead = true; flash = 1; sBad(); api.finish(Math.floor(dist), 700); }
     function loop(now){
       if(!lastT) lastT = now;                     /* first frame: dt=0, never a stale timestamp */
-      const dt = Math.min(0.05,(now-lastT)/1000); lastT = now;
+      const dt = Math.max(0, Math.min(0.05,(now-lastT)/1000)); lastT = now;
       const th = themeAt(dist);
       if(!dead){
         grace = Math.max(0, grace - dt);
         speed += dt*2.2; boost = Math.max(0, boost - dt*55);
         const v = speed + boost;
-        dist += v*dt; api.set(Math.floor(dist));
+        dist = Math.max(0, dist + v*dt); api.set(Math.floor(dist));
         const st = segType(dist + 450);
         const targetCurve = st==='L' ? -1 : st==='R' ? 1 : 0;
         curve += (targetCurve - curve)*Math.min(1, dt*1.4);
@@ -4221,7 +4227,7 @@ const GAMES = [
     window.addEventListener('pointerup', onUp);
     function ringColor(k){ return k>8 ? '#F4F0E8' : k>6 ? '#2A2A2A' : k>4 ? '#2D6FD4' : k>2 ? '#E23A3A' : '#FFD449'; }
     function loop(now){
-      const dt = Math.min(0.05,(now-lastT)/1000); lastT = now;
+      const dt = Math.max(0, Math.min(0.05,(now-lastT)/1000)); lastT = now;
       /* drawing pulls the whole target far into the distance */
       const zTarget = (drawing || (flight && flight.z < 0.9)) ? 0.55 : 1;
       zoom += (zTarget - zoom)*Math.min(1, dt*2.6);
@@ -4408,7 +4414,7 @@ const GAMES = [
     const onMove = e=>{ if(!dead) ballX = clamp((ptr(cv,e).x - W/2)/XS, -1.15, 1.15); };
     cv.addEventListener('pointermove', onMove);
     function loop(now){
-      const dt = Math.min(0.05,(now-lastT)/1000); lastT = now;
+      const dt = Math.max(0, Math.min(0.05,(now-lastT)/1000)); lastT = now;
       if(!dead){
         tHop += dt;
         if(tHop >= T){
@@ -4719,7 +4725,7 @@ const GAMES = [
       ctx.restore();
     }
     function loop(now){
-      const dt = Math.min(0.05,(now-lastT)/1000); lastT = now;
+      const dt = Math.max(0, Math.min(0.05,(now-lastT)/1000)); lastT = now;
       /* advance hop */
       if(hop){
         hop.t += dt/0.12;
@@ -5286,7 +5292,7 @@ const GAMES = [
       ctx.restore();
     }
     function loop(now){
-      const dt = Math.min(0.05,(now-lastT)/1000); lastT = now; t += dt;
+      const dt = Math.max(0, Math.min(0.05,(now-lastT)/1000)); lastT = now; t += dt;
       if(!dead){
         flipT -= dt;
         if(flipT<=0){ omega = -omega; flipT = rand(1.4,3.0); }
@@ -5425,7 +5431,7 @@ const GAMES = [
       pops.push({wx:f.wx, wy:f.wy, t:0.4});
     }
     function loop(now){
-      const dt = Math.min(0.04,(now-lastT)/1000); lastT = now;
+      const dt = Math.max(0, Math.min(0.04,(now-lastT)/1000)); lastT = now;
       if(!dead){
         tRun += dt; shotT -= dt;
         /* steer */
@@ -5738,7 +5744,7 @@ const ENGINES = {
     const onPtr = e=>{ x = clamp(ptr(cv,e).x, 24, W-24); };
     cv.addEventListener('pointermove', onPtr);
     function loop(now){
-      const dt = Math.min(0.05,(now-lastT)/1000); lastT = now;
+      const dt = Math.max(0, Math.min(0.05,(now-lastT)/1000)); lastT = now;
       if(!dead){
         t += dt; dist += (14 + t*1.6)*dt*10*m; api.set(Math.floor(dist));
         if(keys.ArrowLeft) x = Math.max(24, x - 340*dt);
