@@ -2132,6 +2132,14 @@ const rand  = (a,b) => a + Math.random()*(b-a);
 const randi = (a,b) => Math.floor(rand(a,b+1));
 const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
 const esc = s => { const d=document.createElement('div'); d.textContent=String(s); return d.innerHTML; };
+/* esc() sirve para TEXTO, pero NO escapa las comillas dobles. Metido dentro de
+   un atributo value="..." una comilla del propio texto CIERRA el atributo y
+   todo lo que sigue se pierde. Por eso al editar la pregunta
+   'What is an "option" in trading?' solo se guardaba 'What is an '.
+   escAttr() es la version para atributos: escapa comillas dobles y simples. */
+const escAttr = s => String(s == null ? '' : s)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 const fmtN = n => n.toLocaleString('en-US');
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
 const shuffle = a => { const x=[...a]; for(let i=x.length-1;i>0;i--){ const j=randi(0,i); [x[i],x[j]]=[x[j],x[i]]; } return x; };
@@ -5927,7 +5935,7 @@ const HINT = g => {
    navegador esta corriendo, recargamos UNA sola vez con la direccion cambiada,
    que es lo unico que obliga al navegador a soltar su copia vieja.
    ============================================================ */
-const BUILD_TS = '2026-09-23T17:03:05Z';
+const BUILD_TS = '2026-09-23T17:46:58Z';
 (function autoActualizar(){
   try{
     if(sessionStorage.getItem('biq_upd')) return;      /* ya recargamos en esta sesion */
@@ -7855,7 +7863,7 @@ function feedMsgsHTML(t){
     return `<div class="fmsg">
       <span class="fav">${avatarHTML(avOf(m))}</span>
       <div><div class="fh">${esc(m.name)}<span class="ftime">${fmtTime(m.ts)}</span></div>
-      ${g ? `<span class="fgif ${g.a}" title="${esc(g.l)}">${g.e}</span>` : `<div class="ftext">${esc(m.text||'')}</div>`}</div>
+      ${g ? `<span class="fgif ${g.a}" title="${escAttr(g.l)}">${g.e}</span>` : `<div class="ftext">${esc(m.text||'')}</div>`}</div>
     </div>`;
   }).join('');
 }
@@ -7893,7 +7901,7 @@ function chatCardHTML(t){
       <input id="tchat-in" maxlength="140" placeholder="Say something to the arena…" onkeydown="if(event.key==='Enter') sendTourMsg()">
       <button class="btn sm" onclick="sendTourMsg()">Send</button>
     </div>
-    <div id="gif-picker" class="hidden">${GIF_SET.map((g,i)=>`<button onclick="sendTourGif(${i})" title="${esc(g.l)}"><span class="fgif ${g.a}" style="font-size:30px">${g.e}</span><span class="gl">${esc(g.l)}</span></button>`).join('')}</div>
+    <div id="gif-picker" class="hidden">${GIF_SET.map((g,i)=>`<button onclick="sendTourGif(${i})" title="${escAttr(g.l)}"><span class="fgif ${g.a}" style="font-size:30px">${g.e}</span><span class="gl">${esc(g.l)}</span></button>`).join('')}</div>
   </div>`;
 }
 /* --- overall standings, the fun full-width version --- */
@@ -8656,14 +8664,14 @@ function editQuestion(id){
   modal(`
     <div class="qtag">✏️ Edit question</div>
     <div style="text-align:left; max-height:62vh; overflow-y:auto; padding-right:8px">
-      <label class="alabel">Question</label><input id="eq-q" class="tinput" value="${esc(q.q)}">
-      <label class="alabel">Correct answer</label><input id="eq-ans" class="tinput" value="${esc(q.o[q.a]||'')}">
-      <label class="alabel">Wrong option 1</label><input id="eq-o1" class="tinput" value="${esc(others[0]||'')}">
-      <label class="alabel">Wrong option 2</label><input id="eq-o2" class="tinput" value="${esc(others[1]||'')}">
-      <label class="alabel">Wrong option 3</label><input id="eq-o3" class="tinput" value="${esc(others[2]||'')}">
-      <label class="alabel">Answer fact — the big reveal message</label><input id="eq-fact" class="tinput" value="${esc(q.f||'')}">
-      <label class="alabel">Highlight words — blue inside the fact, comma separated</label><input id="eq-hl" class="tinput" value="${esc(q.hl||'')}">
-      <label class="alabel">Learn more link — optional, shows a "Wanna learn more?" button after a correct answer</label><input id="eq-link" class="tinput" placeholder="https://…" value="${esc(q.link||'')}">
+      <label class="alabel">Question</label><input id="eq-q" class="tinput" value="${escAttr(q.q)}">
+      <label class="alabel">Correct answer</label><input id="eq-ans" class="tinput" value="${escAttr(q.o[q.a]||'')}">
+      <label class="alabel">Wrong option 1</label><input id="eq-o1" class="tinput" value="${escAttr(others[0]||'')}">
+      <label class="alabel">Wrong option 2</label><input id="eq-o2" class="tinput" value="${escAttr(others[1]||'')}">
+      <label class="alabel">Wrong option 3</label><input id="eq-o3" class="tinput" value="${escAttr(others[2]||'')}">
+      <label class="alabel">Answer fact — the big reveal message</label><input id="eq-fact" class="tinput" value="${escAttr(q.f||'')}">
+      <label class="alabel">Highlight words — blue inside the fact, comma separated</label><input id="eq-hl" class="tinput" value="${escAttr(q.hl||'')}">
+      <label class="alabel">Learn more link — optional, shows a "Wanna learn more?" button after a correct answer</label><input id="eq-link" class="tinput" placeholder="https://…" value="${escAttr(q.link||'')}">
       <div style="display:flex; align-items:center; gap:10px; margin:14px 0 4px">
         <label class="switch"><input type="checkbox" id="eq-mk" ${q.mk?'checked':''}><span></span></label>
         <b style="font-size:13px">⚡ YOU MUST KNOW — CEO laser mode</b>

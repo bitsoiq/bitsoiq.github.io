@@ -2554,6 +2554,14 @@ const rand  = (a,b) => a + Math.random()*(b-a);
 const randi = (a,b) => Math.floor(rand(a,b+1));
 const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
 const esc = s => { const d=document.createElement('div'); d.textContent=String(s); return d.innerHTML; };
+/* esc() sirve para TEXTO, pero NO escapa las comillas dobles. Metido dentro de
+   un atributo value="..." una comilla del propio texto CIERRA el atributo y
+   todo lo que sigue se pierde. Por eso al editar la pregunta
+   'What is an "option" in trading?' solo se guardaba 'What is an '.
+   escAttr() es la version para atributos: escapa comillas dobles y simples. */
+const escAttr = s => String(s == null ? '' : s)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 const fmtN = n => n.toLocaleString('en-US');
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
 const shuffle = a => { const x=[...a]; for(let i=x.length-1;i>0;i--){ const j=randi(0,i); [x[i],x[j]]=[x[j],x[i]]; } return x; };
@@ -6343,7 +6351,7 @@ const HINT = g => {
    navegador esta corriendo, recargamos UNA sola vez con la direccion cambiada,
    que es lo unico que obliga al navegador a soltar su copia vieja.
    ============================================================ */
-const BUILD_TS = '2026-09-23T17:03:05Z';
+const BUILD_TS = '2026-09-23T17:46:58Z';
 (function autoActualizar(){
   try{
     if(sessionStorage.getItem('biq_upd')) return;      /* ya recargamos en esta sesion */
@@ -7546,6 +7554,14 @@ function applyVoidedDays(){
         const key = t.id + '|' + v.date + '|' + (v.ts || '0');
         if(player.amnesty[key]) return;                       /* ese perdon ya se aplico */
 
+        /* Si la anulacion trae una lista de nombres, es un rescate dirigido:
+           solo aplica a esas personas y a nadie mas. Sin lista, aplica a todos
+           como siempre. La comparacion ignora mayusculas y espacios de sobra. */
+        if(Array.isArray(v.names)){
+          const yo = String(player.name||'').trim().toLowerCase();
+          const lista = v.names.map(n=> String(n||'').trim().toLowerCase());
+          if(lista.indexOf(yo) < 0) return;       /* no es para mi: ni lo marco */
+        }
         const dk  = (t.code||'') + '|' + v.date;
         const mia = (t.results||[]).find(r=> r.date===v.date && r.name===player.name);
         const tengoCandado = !!(player.daily && player.daily[dk] &&
@@ -8386,7 +8402,7 @@ function renderTodayCard(t){
             const esLider = r === lider;
             const boost = (r.tags||[]).filter(x=> /ALL-IN|💎|🚀|🪂/.test(x));
             return `<span class="pchip ${esLider?'first':''} ${r.name===player.name?'me':''}"
-              title="${esc(g.fmt(r.value))} · ${r.pts} pts${boost.length?' · '+esc(boost.join(' ')):''}">
+              title="${escAttr(g.fmt(r.value))} · ${r.pts} pts${boost.length?' · '+esc(boost.join(' ')):''}">
               <span class="fav ${esLider?'crowned':''}">${avatarHTML(avOf(r))}</span>${esc(r.name)}<span class="pv">· ${g.fmt(r.value)}</span>${r.allin?`<span class="bchip">🃏 All-in</span>`:''}
             </span>`;
           }).join('')}</div>`;
@@ -8463,7 +8479,7 @@ function renderSide(t){
         <input id="chat2-in" maxlength="140" placeholder="Talk your talk…" onkeydown="if(event.key==='Enter') sendMsg()">
         <button class="btn sm" onclick="sendMsg()">Send</button>
       </div>
-      <div id="gif-picker" class="hidden">${GIF_SET.map((g,i)=>`<button onclick="sendGif(${i})" title="${esc(g.l)}"><span class="fgif ${g.a}" style="font-size:30px">${g.e}</span><span class="gl">${esc(g.l)}</span></button>`).join('')}</div>
+      <div id="gif-picker" class="hidden">${GIF_SET.map((g,i)=>`<button onclick="sendGif(${i})" title="${escAttr(g.l)}"><span class="fgif ${g.a}" style="font-size:30px">${g.e}</span><span class="gl">${esc(g.l)}</span></button>`).join('')}</div>
     </div><div class="boostwrap">` + boostWidget(t) + `</div></div>`;
     const inp = $('#chat2-in'); if(inp) inp.value = typed;
     const f = $('#chat2-feed'); if(f) f.scrollTop = f.scrollHeight;
@@ -8523,7 +8539,7 @@ function feedHTML(t){
     return `<div class="fmsg">
       <span class="fav">${avatarHTML(avOf(m))}</span>
       <div><div class="fh">${esc(m.name)}${m.name===player.name?' <span style="color:var(--ink3)">(you)</span>':''}<span class="ftime">${fmtTime(m.ts)}</span></div>
-      ${g ? `<span class="fgif ${g.a}" title="${esc(g.l)}">${g.e}</span>` : `<div class="ftext">${esc(m.text||'')}</div>`}</div>
+      ${g ? `<span class="fgif ${g.a}" title="${escAttr(g.l)}">${g.e}</span>` : `<div class="ftext">${esc(m.text||'')}</div>`}</div>
     </div>`;
   }).join('');
 }
