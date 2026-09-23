@@ -4205,13 +4205,21 @@ const GAMES = [
     const proj = z => { const f = 1/(1+z*0.0055); const pn = (f-0.14)/0.86; return {y: HOR+(PY-HOR)*pn, s: pn}; };
     const roadHalf = s => 20 + 250*s;
     const xCenter = z => W/2 + curve * Math.pow(z/1000, 2) * 430;
-    const onMove = e=>{ const q = ptr(cv,e); tx = clamp((q.x - W/2)/(roadHalf(1)*0.92), -1, 1); };
+    /* LIMITE DEL CARRIL: los obstaculos nunca pasan de aqui, asi que la bola
+       tampoco. Si la bola pudiera ir mas afuera, quedaba en una esquina donde
+       ningun cubo la alcanza: puntaje infinito. */
+    const LANE = 0.85;
+    /* El volante usa TODO el ancho del canvas. Antes dividia entre 248 px, asi
+       que solo la franja central servia y en cuanto el mouse salia de ahi el
+       valor se topaba: la bola se pegaba a la orilla y mover el mouse ya no
+       hacia nada. Eso era el "no se mueve". */
+    const onMove = e=>{ const q = ptr(cv,e); tx = clamp(((q.x - W/2)/(W/2))*LANE, -LANE, LANE); };
     cv.addEventListener('pointermove', onMove);
     cv.addEventListener('pointerdown', onMove);
     /* keyboard fallback so the run always steers, mouse or not */
     const onKey = e=>{
-      if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A'){ e.preventDefault(); tx = clamp(tx-0.34, -1, 1); }
-      if(e.key==='ArrowRight'||e.key==='d'||e.key==='D'){ e.preventDefault(); tx = clamp(tx+0.34, -1, 1); }
+      if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A'){ e.preventDefault(); tx = clamp(tx-0.34, -LANE, LANE); }
+      if(e.key==='ArrowRight'||e.key==='d'||e.key==='D'){ e.preventDefault(); tx = clamp(tx+0.34, -LANE, LANE); }
     };
     window.addEventListener('keydown', onKey);
     function spawn(){
@@ -4219,7 +4227,7 @@ const GAMES = [
       if(zMax < 680){
         const inTunnel = segType(dist + 1000) === 'T';
         const isBoost = Math.random() < (inTunnel ? 0.42 : 0.16);
-        let xr = isBoost ? rand(-0.6,0.6) : rand(-0.8,0.8);
+        let xr = isBoost ? rand(-0.6,0.6) : rand(-LANE,LANE);
         /* early game: never drop a cube on the player's line — no cheap deaths */
         if(!isBoost && grace > 0 && Math.abs(xr - px) < 0.4) xr = px + (xr >= px ? 0.45 : -0.45);
         objs.push({z:1000, xr: clamp(xr, -0.85, 0.85), boost:isBoost});
@@ -5345,7 +5353,12 @@ const GAMES = [
     function show(){
       if(!arena.isConnected) return;
       round++;
-      const n = clamp(3 + Math.floor(round*0.8) + randi(0,1), 3, 14);
+      /* Antes: 3 + round*0.8, topado en 14. Desde la ronda 14 la cuenta daba
+         siempre 14, asi que se podia dejar el mismo numero fijo y sumar para
+         siempre. Ahora, cuando la rampa llega arriba, el numero varia de
+         verdad dentro del carril contable y nunca se queda quieto. */
+      const rampa = 3 + Math.floor(round*0.8);
+      const n = rampa >= 12 ? randi(8, 14) : clamp(rampa + randi(0,1), 3, 14);
       const col = VIVID[randi(0,VIVID.length-1)];
       /* an iso grid with holes — every cube visible, separated, countable */
       const cols = Math.max(3, Math.ceil(Math.sqrt(n*1.45)));
