@@ -2163,6 +2163,14 @@ function daysFingerprint(){
     return String(h) + '.' + str.length;
   }catch(e){ return ''; }
 }
+/* ¿Ya bajamos el historial completo en esta sesion?
+   Mientras sea false, la pantalla NO debe sacar conclusiones de datos a medias:
+   antes decia "no jugaste el 16" a quien si jugo, y mostraba 200 puntos que a
+   los segundos se volvian 600. No se perdia nada, pero asustaba. */
+let datosCompletos = false;
+/* red de seguridad: si la red anda mal, a los 10 segundos mostramos lo que haya
+   en vez de dejar la pantalla en blanco para siempre */
+try{ setTimeout(()=>{ datosCompletos = true; try{ rerenderCurrent(); }catch(e){} }, 10000); }catch(e){}
 function syncLoad(){
   try{
     const o = JSON.parse(localStorage.getItem(SYNC_LS) || 'null');
@@ -2436,6 +2444,9 @@ async function cloudPull(){
       }
     }
     if(!sinColumna) CLOUD.m.resAt = resAtCand;
+    /* la primera vuelta pide TODOS los dias de juego pasados: cuando termina,
+       ya podemos confiar en lo que se ve en pantalla */
+    if(primera || slow){ if(!datosCompletos){ datosCompletos = true; changed = true; } }
     if(resSaltadas && typeof console !== 'undefined') try{ console.warn('[BitsoIQ] ' + resSaltadas + ' fila(s) no se pudieron aplicar: la marca de sync no avanza, se vuelven a pedir'); }catch(e){}
 
     if(slow){
@@ -8113,7 +8124,10 @@ function homeCardHTML(code){
       <div class="tname">${esc(t.name||'Tournament')}</div>
       <div class="tsub">${sub}</div>
       <div class="tmeta">
-        ${myI>=0 ? `<span class="pill neon">#${myI+1} 🏆 · ${st[myI].pts} pts</span>` : `<span class="pill dim">No runs yet — play today!</span>`}
+        ${!datosCompletos
+            ? `<span class="pill dim">Loading your points…</span>`
+            : (myI>=0 ? `<span class="pill neon">#${myI+1} 🏆 · ${st[myI].pts} pts</span>`
+                      : `<span class="pill dim">No runs yet — play today!</span>`)}
         <span class="pill dim">${players} player${players===1?'':'s'}</span>
       </div>
     </div>
@@ -8297,7 +8311,7 @@ function renderTodayCard(t){
   const rows = dayRows(t, tKey(t));
   const mine = rows.find(r=> r.name===player.name);
   const best = rows[0];
-  const _mis = cuMissed(t);
+  const _mis = datosCompletos ? cuMissed(t) : [];
   const _cu = _mis.length ? (()=>{
     const nd = (t.days||[]).find(x=> x.date===_mis[0]);
     const ng = nd ? gameById(nd.gameId) : null;
