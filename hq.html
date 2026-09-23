@@ -3798,8 +3798,25 @@ const GAMES = [
     const LANE = 0.85;
     /* el volante usa TODO el ancho del canvas, no solo la franja central */
     const onMove = e=>{ const q = ptr(cv,e); tx = clamp(((q.x - W/2)/(W/2))*LANE, -LANE, LANE); };
+    /* ESCUCHAMOS EN TODA LA VENTANA, no solo encima del canvas.
+       Antes, si el puntero estaba sobre el marcador, un poco afuera del canvas
+       o pegado al borde de la pantalla, no llegaba ningun evento y la bola no
+       se movia por mas que movieras el mouse. ptr() ya traduce a coordenadas
+       del canvas y el clamp resuelve lo que cae afuera. */
     cv.addEventListener('pointermove', onMove);
     cv.addEventListener('pointerdown', onMove);
+    window.addEventListener('pointermove', onMove, {passive:true});
+    window.addEventListener('pointerdown', onMove, {passive:true});
+    /* En celular el dedo no "flota": si tocas y sueltas no hay pointermove.
+       Manteniendo el dedo en un lado, la bola se va hacia ese lado. */
+    let dedo = 0, dedoI = null;
+    const abajo = e=>{ const q = ptr(cv,e); dedo = q.x < W/2 ? -1 : 1;
+      if(!dedoI) dedoI = setInterval(()=>{ if(dedo) tx = clamp(tx + dedo*0.055, -LANE, LANE); }, 32); };
+    const arriba = ()=>{ dedo = 0; };
+    cv.addEventListener('touchstart', abajo, {passive:true});
+    cv.addEventListener('touchmove', abajo, {passive:true});
+    window.addEventListener('touchend', arriba, {passive:true});
+    window.addEventListener('touchcancel', arriba, {passive:true});
     /* keyboard fallback so the run always steers, mouse or not */
     const onKey = e=>{
       if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A'){ e.preventDefault(); tx = clamp(tx-0.34, -LANE, LANE); }
@@ -3930,7 +3947,15 @@ const GAMES = [
       raf = requestAnimationFrame(loop);
     }
     raf = requestAnimationFrame(loop);
-    return ()=>{ cancelAnimationFrame(raf); window.removeEventListener('keydown', onKey); };
+    return ()=>{
+      cancelAnimationFrame(raf);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerdown', onMove);
+      window.removeEventListener('touchend', arriba);
+      window.removeEventListener('touchcancel', arriba);
+      if(dedoI) clearInterval(dedoI);
+    };
   }
 },
 
