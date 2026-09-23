@@ -5917,10 +5917,15 @@ const Freezer = (()=>{
   const rSI   = window.setInterval ? window.setInterval.bind(window) : setInterval;
   const rPerf = (typeof performance !== 'undefined' && performance.now) ? performance.now.bind(performance) : Date.now;
   const rRAF  = window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : (cb => rST(()=> cb(rPerf()), 16));
-  let on=false, frozen=false, offset=0, frozeAt=0, pend=[];
+  let on=false, frozen=false, offset=0, frozeAt=0, pend=[], perro=null;
   function install(){
     if(on) return;
     on = true; frozen = true; frozeAt = rPerf(); pend = [];
+    /* PERRO GUARDIAN: congelar el tiempo detiene rAF, setTimeout y setInterval
+       de TODA la app. Si algo sale mal y nadie descongela, la pagina entera se
+       queda muerta. Pasados 25 segundos nos descongelamos solos. */
+    try{ if(perro) clearTimeout(perro); }catch(e){}
+    perro = rST(()=>{ if(frozen){ try{ uninstall(); }catch(e){} } }, 25000);
     try{ performance.now = ()=> (frozen ? frozeAt : rPerf()) - offset; }catch(e){}
     window.requestAnimationFrame = cb => rRAF(t => cb((frozen ? frozeAt : t) - offset));
     window.setTimeout = (fn, ms, ...a)=> (typeof fn === 'function')
@@ -5932,6 +5937,7 @@ const Freezer = (()=>{
   }
   function unfreeze(){
     if(!on || !frozen) return;
+    try{ if(perro){ clearTimeout(perro); perro = null; } }catch(e){}
     offset += rPerf() - frozeAt;
     frozen = false;
     const q = pend; pend = [];
@@ -5940,6 +5946,7 @@ const Freezer = (()=>{
   function uninstall(){
     if(!on) return;
     if(frozen){ offset += rPerf() - frozeAt; frozen = false; }
+    try{ if(perro){ clearTimeout(perro); perro = null; } }catch(e){}
     on = false; pend = [];
     try{ performance.now = rPerf; }catch(e){}
     window.requestAnimationFrame = rRAF;
@@ -5979,7 +5986,18 @@ function beginGame(gid, mode, isRetry){
         A transparent gate eats every input until the player launches the run. */
   const stageEl = $('#stage');
   Freezer.install();
-  startRun();
+  /* Si el arranque del juego lanza cualquier error, ANTES esto dejaba el
+     Freezer puesto y toda la app congelada, sin manera de salir. */
+  try{
+    startRun();
+  }catch(errArranque){
+    try{ Freezer.uninstall(); }catch(e){}
+    try{ console.error('[BitsoIQ] el juego no arranco:', errArranque); }catch(e){}
+    run = null;
+    try{ $('#ov').classList.add('hidden'); }catch(e){}
+    toast('That game did not start. Give it another go.');
+    return;
+  }
   const gate = document.createElement('div');
   gate.className = 'gate';
   const eat = e => { e.preventDefault(); e.stopPropagation(); };
@@ -5995,6 +6013,7 @@ function beginGame(gid, mode, isRetry){
   window.addEventListener('keydown', keyGuard, true);
   run.gateCleanup = ()=>{
     try{ window.removeEventListener('keydown', keyGuard, true); }catch(e){}
+    try{ quitarLanzadores(); }catch(e){}
     try{ gate.remove(); if(hint) hint.remove(); }catch(e){}
     Freezer.uninstall();
   };
@@ -6040,12 +6059,31 @@ function beginGame(gid, mode, isRetry){
         hint.textContent = HINT(g);
         stageEl.appendChild(hint);
         gate.addEventListener('pointerdown', launch);
+        /* Cualquier toque o tecla en cualquier parte arranca: si el toque cae
+           fuera del gate por un pixel, ya no se pierde. */
+        window.addEventListener('pointerdown', launchAny, true);
+        window.addEventListener('mousedown',   launchAny, true);
+        window.addEventListener('touchstart',  launchAny, true);
+        window.addEventListener('click',       launchAny, true);
+        /* Y si aun asi nada registra, arrancamos solos a los 4 segundos.
+           Vale mil veces mas que quedarse congelado para siempre. */
+        Freezer.rt.setTimeout(()=>{ if(run && phase === 'go') launch(); }, 4000);
       }
     })();
+  }
+  function launchAny(){ if(run && phase === 'go') launch(); }
+  function quitarLanzadores(){
+    try{
+      window.removeEventListener('pointerdown', launchAny, true);
+      window.removeEventListener('mousedown',   launchAny, true);
+      window.removeEventListener('touchstart',  launchAny, true);
+      window.removeEventListener('click',       launchAny, true);
+    }catch(e){}
   }
   function launch(){
     if(!run || phase === 'live') return;
     phase = 'live';
+    quitarLanzadores();
     /* the moment the run truly starts, today's slot is spent — quitting won't refund it */
     if(locked){
       if(mode==='warmup') locked.w = (locked.w||0) + 1;
