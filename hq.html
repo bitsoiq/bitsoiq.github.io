@@ -5918,6 +5918,73 @@ const HINT = g => {
 /* ---------- Freezer: the real arena renders live but time stands still until GO ----------
    While frozen: performance.now() and rAF timestamps are pinned, timeouts/intervals hold.
    The game draws its opening frame, nothing moves, no input reaches it. Unfreeze = play. */
+/* ============================================================
+   AUTO-ACTUALIZACION
+   Todo un dia se nos fue en gente jugando con el archivo viejo guardado en su
+   navegador: subiamos el arreglo y ellos seguian con la version rota. Esto lo
+   termina. Al abrir, le preguntamos al servidor (una peticion diminuta, solo
+   cabeceras) cuando se publico el archivo. Si es mas nuevo que el que este
+   navegador esta corriendo, recargamos UNA sola vez con la direccion cambiada,
+   que es lo unico que obliga al navegador a soltar su copia vieja.
+   ============================================================ */
+const BUILD_TS = '2026-09-23T17:03:05Z';
+(function autoActualizar(){
+  try{
+    if(sessionStorage.getItem('biq_upd')) return;      /* ya recargamos en esta sesion */
+    const ruta = location.pathname.indexOf('.html') >= 0 ? location.pathname : location.pathname + 'index.html';
+    fetch(ruta + '?hb=' + Date.now(), {method:'HEAD', cache:'no-store'}).then(r=>{
+      const lm = r.headers.get('last-modified');
+      if(!lm) return;
+      const servidor = new Date(lm).getTime(), mio = new Date(BUILD_TS).getTime();
+      if(isFinite(servidor) && isFinite(mio) && servidor > mio + 30000){
+        sessionStorage.setItem('biq_upd','1');
+        location.replace(ruta + '?v=' + servidor);
+      }
+    }).catch(()=>{});
+  }catch(e){}
+})();
+/* ============================================================
+   REPORTE DE ERRORES
+   No hay manera de ver la consola de 300 personas, y sin eso el diagnostico es
+   adivinar. Esto manda los errores de JavaScript a la nube para poder leerlos.
+   NO manda nada personal: solo el mensaje del error, el navegador, el tamano de
+   pantalla y la version del archivo. Maximo 5 por sesion.
+   ============================================================ */
+(function reporteErrores(){
+  let enviados = 0;
+  function reportar(tipo, msg, donde){
+    try{
+      if(enviados >= 5) return;
+      enviados++;
+      const fila = {
+        id: 'err-' + Date.now() + '-' + Math.random().toString(36).slice(2,7),
+        tid: '__errors__',
+        ts: Date.now(),
+        data: {
+          tipo: tipo,
+          msg: String(msg == null ? '' : msg).slice(0,300),
+          donde: String(donde == null ? '' : donde).slice(0,200),
+          quien: (typeof player !== 'undefined' && player && player.name) ? player.name : '?',
+          build: (typeof BUILD_TS !== 'undefined') ? BUILD_TS : 'sin sello',
+          juego: (typeof run !== 'undefined' && run && run.g) ? run.g.id : 'ninguno',
+          congelado: (typeof Freezer !== 'undefined') ? !!Freezer.frozen : null,
+          nav: (navigator.userAgent || '').slice(0,170),
+          pantalla: (window.innerWidth||0) + 'x' + (window.innerHeight||0),
+          dpr: window.devicePixelRatio || 1
+        }
+      };
+      fetch(CLOUD_URL + '/rest/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json', apikey: CLOUD_KEY,
+                   Authorization: 'Bearer ' + CLOUD_KEY, Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify([fila])
+      }).catch(()=>{});
+    }catch(e){}
+  }
+  window.addEventListener('error', e => reportar('error', e && e.message, (e && e.filename ? e.filename.split('/').pop() : '') + ':' + (e && e.lineno)));
+  window.addEventListener('unhandledrejection', e => reportar('promesa', e && e.reason && (e.reason.message || e.reason), ''));
+  window.__reportar = reportar;   /* para reportar a mano desde el codigo */
+})();
 const Freezer = (()=>{
   const rST   = window.setTimeout ? window.setTimeout.bind(window) : setTimeout;
   const rSI   = window.setInterval ? window.setInterval.bind(window) : setInterval;
@@ -6074,6 +6141,14 @@ function beginGame(gid, mode, isRetry){
         /* Y si aun asi nada registra, arrancamos solos a los 4 segundos.
            Vale mil veces mas que quedarse congelado para siempre. */
         Freezer.rt.setTimeout(()=>{ if(run && phase === 'go') launch(); }, 4000);
+        /* Si a los 12 segundos seguimos congelados, algo salio muy mal:
+           lo reportamos para poder verlo desde HQ. */
+        Freezer.rt.setTimeout(()=>{
+          try{
+            if(run && Freezer.frozen && window.__reportar)
+              window.__reportar('congelado', 'el juego siguio congelado 12s despues del GO', 'fase=' + phase);
+          }catch(e){}
+        }, 12000);
       }
     })();
   }
