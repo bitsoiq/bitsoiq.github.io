@@ -984,7 +984,7 @@ footer{max-width:1320px; margin:0 auto; padding:10px 28px 34px; color:var(--ink3
           </div>
           <div class="card">
             <h3>💾 Backup</h3>
-            <p class="cardhint">El plan gratuito de Supabase no hace respaldos automáticos. Bájate una copia de todo (torneos, resultados, preguntas, jugadores, historial) cuando quieras.</p>
+            <p class="cardhint">Supabase's free plan does not take automatic backups. Download a full copy whenever you want: tournaments, results, questions, players and history.</p>
             <button class="btn" style="width:100%; margin-top:10px" onclick="downloadBackup()">⬇️ Download full backup (.json)</button>
             <p style="font-size:11.5px; color:var(--ink3); font-weight:700; margin-top:8px">Recomendado: una vez por semana durante el torneo. El archivo se guarda en tus Descargas.</p>
           </div>
@@ -5947,7 +5947,7 @@ const HINT = g => {
    navegador esta corriendo, recargamos UNA sola vez con la direccion cambiada,
    que es lo unico que obliga al navegador a soltar su copia vieja.
    ============================================================ */
-const BUILD_TS = '2026-09-25T16:48:39Z';
+const BUILD_TS = '2026-09-25T16:56:39Z';
 (function autoActualizar(){
   try{
     if(sessionStorage.getItem('biq_upd')) return;      /* ya recargamos en esta sesion */
@@ -7696,6 +7696,157 @@ function useHistQuestions(hid){
   goAdmin('tour');
   toast('Your next tournament starts with that question bank 📚 — create it now.');
 }
+
+/* ============ ONE-PAGER: una imagen lista para compartir ============
+   Dibuja en un canvas las dos secciones que importan para leadership:
+   participacion + retencion, y cada mensaje del peor al mejor.
+   Sale un PNG, sin librerias ni servicios de por medio. */
+function hinsOnePager(hid){
+  const d = window.__hins;
+  if(!d || !d.qrows){ toast('Open the insights first'); return; }
+  const h = d.h, days = d.daysD || [], qs = d.qrows.slice(0, 14);
+
+  const W = 1400, PAD = 56;
+  const chartH = 300;
+  const rowH = 54;
+  const headH = 250;
+  const H = headH + chartH + 90 + qs.length * rowH + 110;
+
+  const cv = document.createElement('canvas');
+  const R = 2;                                   /* doble resolucion: se ve nitido */
+  cv.width = W * R; cv.height = H * R;
+  const c = cv.getContext('2d');
+  c.scale(R, R);
+
+  const INK='#EAF2EE', INK2='#9FB0A8', INK3='#6C7C75', NEON='#C9F24D', BLUE='#7CD5FF';
+  const col = p => p<55 ? '#FF6B6B' : p<75 ? '#F0B429' : p<90 ? '#00E5C0' : NEON;
+  const F = (w,sz)=> c.font = w+' '+sz+'px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  const rr = (x,y,w,hh,r)=>{ r=Math.min(r,w/2,hh/2); c.beginPath();
+    c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+hh,r); c.arcTo(x+w,y+hh,x,y+hh,r);
+    c.arcTo(x,y+hh,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); };
+  const cut = (t,max)=>{ t=String(t==null?'':t); if(c.measureText(t).width<=max) return t;
+    let s2=t; while(s2.length>4 && c.measureText(s2+'…').width>max) s2=s2.slice(0,-1); return s2+'…'; };
+
+  /* fondo */
+  c.fillStyle = '#0B0E0D'; c.fillRect(0,0,W,H);
+  const gl = c.createRadialGradient(W*0.82, 90, 20, W*0.82, 90, 560);
+  gl.addColorStop(0,'rgba(201,242,77,.10)'); gl.addColorStop(1,'rgba(201,242,77,0)');
+  c.fillStyle = gl; c.fillRect(0,0,W,420);
+
+  /* encabezado */
+  let y = PAD + 8;
+  F('900', 13); c.fillStyle = NEON; c.letterSpacing = '2px';
+  c.fillText('BITSOIQ · LEADERSHIP ONE-PAGER', PAD, y);
+  c.letterSpacing = '0px';
+  y += 46; F('900', 40); c.fillStyle = INK;
+  c.fillText(cut(h.name || 'BitsoIQ Tournament', W - PAD*2), PAD, y);
+  y += 32; F('800', 16); c.fillStyle = INK2;
+  const rango = (days.length ? (days[0].date + '  →  ' + days[days.length-1].date) : '');
+  c.fillText('Day ' + days.length + ' of ' + ((h.days||[]).length || days.length) + '   ·   ' + rango, PAD, y);
+
+  /* KPIs */
+  y += 40;
+  const tot = (h.trivia||[]).length, ok = (h.trivia||[]).filter(e=>e.ok).length;
+  const jugadores = new Set(); (h.days||[]).forEach(dd=> (dd.rows||[]).forEach(r=> jugadores.add(r.name)));
+  const flojos = d.qrows.filter(q=> q.pct < 75).length;
+  const kpis = [
+    [String(jugadores.size), 'BITSONAUTS PLAYING'],
+    [(tot ? Math.round(ok/tot*100) : 0) + '%', 'MESSAGE RETENTION'],
+    [String(tot), 'ANSWERS LOGGED'],
+    [String(flojos), 'MESSAGES TO REINFORCE']
+  ];
+  const kw = (W - PAD*2 - 36) / 4;
+  kpis.forEach((k,i)=>{
+    const x = PAD + i*(kw+12);
+    c.fillStyle = '#141917'; rr(x, y, kw, 92, 16); c.fill();
+    c.strokeStyle = '#242C28'; c.lineWidth = 1; rr(x, y, kw, 92, 16); c.stroke();
+    F('900', 34); c.fillStyle = (i===3 && flojos>0) ? '#F0B429' : NEON;
+    c.fillText(k[0], x+20, y+46);
+    F('800', 11); c.fillStyle = INK3; c.letterSpacing = '1px';
+    c.fillText(k[1], x+20, y+70); c.letterSpacing = '0px';
+  });
+  y += 92 + 46;
+
+  /* ---- participacion + retencion ---- */
+  F('900', 21); c.fillStyle = INK;
+  c.fillText('Participation and retention, day by day', PAD, y);
+  y += 24; F('800', 13); c.fillStyle = INK3;
+  c.fillText('Bars = people who played.   Line = % who got the message right.', PAD, y);
+  y += 22;
+
+  const cx0 = PAD, cy0 = y, cw = W - PAD*2, chH = chartH - 60;
+  const maxP = Math.max(1, ...days.map(r=> r.players));
+  c.strokeStyle = '#1E2622'; c.lineWidth = 1;
+  for(let g=0; g<=4; g++){ const gy = cy0 + chH - g/4*chH;
+    c.beginPath(); c.moveTo(cx0, gy); c.lineTo(cx0+cw, gy); c.stroke(); }
+  const step = cw / Math.max(1, days.length), bw = Math.min(54, step*0.5);
+  const pts = [];
+  days.forEach((r,i)=>{
+    const xc = cx0 + (i+0.5)*step;
+    const bh = Math.round(r.players/maxP*chH), by = cy0 + chH - bh;
+    const g2 = c.createLinearGradient(0, by, 0, cy0+chH);
+    g2.addColorStop(0,'rgba(124,213,255,.95)'); g2.addColorStop(1,'rgba(124,213,255,.22)');
+    c.fillStyle = g2; rr(xc-bw/2, by, bw, bh, 7); c.fill();
+    F('800', 13); c.fillStyle = INK2; c.textAlign='center';
+    c.fillText(String(r.players), xc, by-9);
+    F('800', 12); c.fillStyle = INK3;
+    c.fillText(String(r.date).slice(5), xc, cy0+chH+24);
+    c.textAlign='left';
+    if(r.acc != null) pts.push([xc, cy0 + chH - r.acc/100*chH, r.acc]);
+  });
+  if(pts.length){
+    c.strokeStyle = NEON; c.lineWidth = 3; c.lineJoin='round'; c.beginPath();
+    pts.forEach((p,i)=> i ? c.lineTo(p[0],p[1]) : c.moveTo(p[0],p[1])); c.stroke();
+    pts.forEach(p=>{
+      c.fillStyle='#0B0E0D'; c.beginPath(); c.arc(p[0],p[1],6,0,Math.PI*2); c.fill();
+      c.strokeStyle=NEON; c.lineWidth=3; c.beginPath(); c.arc(p[0],p[1],6,0,Math.PI*2); c.stroke();
+      F('900', 13); c.fillStyle=NEON; c.textAlign='center'; c.fillText(p[2]+'%', p[0], p[1]-16); c.textAlign='left';
+    });
+  }
+  y = cy0 + chartH + 24;
+
+  /* ---- cada mensaje ---- */
+  F('900', 21); c.fillStyle = INK;
+  c.fillText('Every message, worst learned first', PAD, y);
+  y += 24; F('800', 13); c.fillStyle = INK3;
+  c.fillText('Under 55% in red: that message did not land.   Between 55 and 75 in amber: reinforce it.', PAD, y);
+  y += 26;
+
+  const barW = 300, valW = 118, txtW = W - PAD*2 - barW - valW - 46;
+  qs.forEach(q=>{
+    const cc = col(q.pct);
+    c.fillStyle = cc; c.beginPath(); c.arc(PAD+7, y+13, 5.5, 0, Math.PI*2); c.fill();
+    F('800', 15); c.fillStyle = INK;
+    c.fillText(cut(q.q, txtW), PAD+26, y+18);
+    const bx = W - PAD - valW - barW;
+    c.fillStyle = '#1E2622'; rr(bx, y+8, barW, 11, 99); c.fill();
+    c.fillStyle = cc; rr(bx, y+8, Math.max(8, barW*q.pct/100), 11, 99); c.fill();
+    F('900', 16); c.fillStyle = cc; c.textAlign='right';
+    c.fillText(q.pct + '%', W-PAD-52, y+20);
+    F('800', 13); c.fillStyle = INK3;
+    c.fillText(q.c + '/' + q.a, W-PAD, y+20);
+    c.textAlign='left';
+    y += rowH;
+  });
+  if(d.qrows.length > qs.length){
+    F('800', 13); c.fillStyle = INK3;
+    c.fillText('+ ' + (d.qrows.length - qs.length) + ' more messages in the full dashboard', PAD+26, y+10);
+  }
+
+  /* pie */
+  F('800', 12); c.fillStyle = INK3;
+  c.fillText('BitsoIQ · generated ' + new Date().toLocaleString('en-US', {dateStyle:'medium', timeStyle:'short'}) + ' · no personal data on this page', PAD, H-28);
+
+  /* descarga */
+  try{
+    const a = document.createElement('a');
+    a.href = cv.toDataURL('image/png');
+    a.download = 'BitsoIQ-one-pager-' + new Date().toISOString().slice(0,10) + '.png';
+    document.body.appendChild(a); a.click();
+    setTimeout(()=> a.remove(), 1200);
+    toast('One-pager downloaded 📸 — drop it straight into Slack');
+  }catch(e){ toast('Could not build the image'); }
+}
 /* ============ DASHBOARD DE HISTORY: helpers ============ */
 function hinsQCol(p){ return p<55 ? 'var(--red)' : p<75 ? '#F0B429' : p<90 ? '#00E5C0' : 'var(--neon)'; }
 function hinsQRow(r, i){
@@ -7876,7 +8027,8 @@ function histInsightsPaint(hid){
         <div class="hc"><b>${st.length ? esc(st[0].name) : '—'}</b><span>champion 👑</span></div>
       </div>
       <div class="hins-tools">
-        <button class="btn sm" onclick="hinsCopySheets('${h.id}')">📋 Copy all for Google Sheets</button>
+        <button class="btn sm" onclick="hinsOnePager('${h.id}')">📸 Download one-pager (PNG)</button>
+        <button class="btn sm ghost" onclick="hinsCopySheets('${h.id}')">📋 Copy all for Google Sheets</button>
         <button class="btn sm ghost" onclick="hinsCsv('${h.id}','questions')">⬇ Messages CSV</button>
         <button class="btn sm ghost" onclick="hinsCsv('${h.id}','days')">⬇ Days CSV</button>
         <button class="btn sm ghost" onclick="hinsCsv('${h.id}','players')">⬇ Players CSV</button>
@@ -7887,11 +8039,11 @@ function histInsightsPaint(hid){
       ${st.length ? st.map((p,i)=> `<div class="hrow"><span class="hrk">${i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1)}</span><span class="hnm">${esc(p.name)}</span>${bar(Math.round(p.pts/(st[0].pts||1)*100), 'var(--neon)')}<b>${p.pts} pts · ${p.days}d</b></div>`).join('') : '<div class="empty" style="padding:16px">No runs recorded.</div>'}
       </div>
       <h3>📅 Participation and retention, day by day <span class="pill dim">bars = players · line = % correct</span></h3>
-      <p class="cardhint" style="margin:0 0 10px">La asistencia te dice el alcance. La línea te dice si el mensaje aterrizó.</p>
+      <p class="cardhint" style="margin:0 0 10px">Attendance tells you the reach. The line tells you whether the message actually landed.</p>
       ${hinsChart(daysD)}
       ${qrows.length ? `
       <h3>🧠 Every message, worst learned first <span class="pill dim">click one to see who missed it</span></h3>
-      <p class="cardhint" style="margin:0 0 10px">Bajo 55% en rojo: ese mensaje no aterrizó. Entre 55 y 75 en ámbar: hay que reforzarlo.</p>
+      <p class="cardhint" style="margin:0 0 10px">Under 55% in red: that message did not land. Between 55 and 75 in amber: it needs reinforcing.</p>
       <div class="hscroll" id="hins-q">${qrows.map((r,i)=> hinsQRow(r,i)).join('')}</div>
       <div class="two-up">
         <div>
@@ -7922,7 +8074,7 @@ function histInsightsPaint(hid){
         <span class="pill dim">emails admin-only</span>
         <span class="pill ${prows.filter(p=>p.email).length === prows.length ? 'green' : ''}">${prows.filter(p=>p.email).length}/${prows.length} emails on file</span>
       </h3>
-      ${prows.some(p=>!p.email) ? `<p class="cardhint" style="margin:0 0 8px">Los que faltan se registran solos la próxima vez que esa persona abra el juego. Con la versión nueva se intenta en cada sincronización, así que se van llenando en horas. No hay nada que hacer.</p>` : ''}
+      ${prows.some(p=>!p.email) ? `<p class="cardhint" style="margin:0 0 8px">The missing ones register themselves the next time that person opens the game. The new version retries on every sync, so they fill in within hours. Nothing for you to do.</p>` : ''}
       ${emailsHint() ? `<div class="empty" style="padding:12px; margin-bottom:8px; text-align:left; font-size:12.5px">${emailsHint()}</div>` : ''}
       <div class="hscroll">
       ${prows.map((p,i)=> `<div class="hrow"><span class="hrk">${i+1}</span>
