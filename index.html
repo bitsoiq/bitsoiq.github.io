@@ -6351,7 +6351,7 @@ const HINT = g => {
    navegador esta corriendo, recargamos UNA sola vez con la direccion cambiada,
    que es lo unico que obliga al navegador a soltar su copia vieja.
    ============================================================ */
-const BUILD_TS = '2026-09-23T18:11:18Z';
+const BUILD_TS = '2026-09-25T16:48:39Z';
 (function autoActualizar(){
   try{
     if(sessionStorage.getItem('biq_upd')) return;      /* ya recargamos en esta sesion */
@@ -6851,7 +6851,39 @@ function iqLog(q, ok){
   saveState();
   return s;
 }
-function iqStreak(t, name){ if(!t) return 0; const s = (state.streaks||{})[t.id + '|' + name]; return s ? (s.n||0) : 0; }
+/* LA RACHA CONTANDO HOY.
+   El badge 🔥 leia un valor que solo se recalcula cada varios minutos, asi que
+   justo despues de contestar decia 9 mientras el bono de Diamond Hands ya
+   contaba 10. Se veian peleados aunque los dos estuvieran bien.
+   Ahora el badge se calcula en el momento, con la misma regla: cuenta hoy solo
+   si ya jugo Y contesto bien. Si fallo hoy, la racha es 0. */
+function iqStreakLive(t, name){
+  try{
+    if(!t || !name) return null;
+    const dias = (t.days||[]).filter(d=>d.gameId).map(d=>d.date).sort();
+    const hoy = tKey(t);
+    const hasta = dias.filter(d=> d <= hoy);
+    if(!hasta.length) return null;
+    const logs = (state.triviaLog||[]).filter(e=> e.tid===t.id && e.name===name);
+    if(!logs.length) return null;                 /* sin datos locales: que mande el valor guardado */
+    let n = 0, ultimoOk = '';
+    hasta.forEach((d,i)=>{
+      const es = logs.filter(e=> e.date===d);
+      if(!es.length) return;                      /* ese dia no jugo: no rompe, pero tampoco encadena */
+      const ult = es[es.length-1];
+      if(ult.ok){ n = (i>0 && ultimoOk===hasta[i-1]) ? n+1 : 1; ultimoOk = d; }
+      else { n = 0; ultimoOk = ''; }
+    });
+    return n;
+  }catch(e){ return null; }
+}
+function iqStreak(t, name){
+  if(!t) return 0;
+  const vivo = iqStreakLive(t, name);
+  if(vivo !== null) return vivo;                  /* lo recien calculado manda */
+  const s = (state.streaks||{})[t.id + '|' + name];
+  return s ? (s.n||0) : 0;                        /* respaldo: lo que dejo la ultima sincronizacion */
+}
 function iqBadge(t, name){ const n = iqStreak(t, name); return n>=2 ? ' <span class="stk" title="'+n+' game days in a row playing & answering right">🔥'+n+'</span>' : ''; }
 function iqRecapData(t, name){
   const log = (state.triviaLog||[]).filter(e=> e.tid===t.id);
@@ -8187,6 +8219,7 @@ function leaveTour(code, ev){
 
 /* ---------- arena ---------- */
 function openArena(code){
+  try{ pushEmailOnce(); }catch(e){}   /* otra oportunidad de registrar el correo */
   curCode = String(code).toUpperCase();
   arenaTab = 'chat';
   paintChips();
@@ -9018,6 +9051,12 @@ paintChips();
 if(player.name && (player.codes||[]).length){ renderHome(); show('scr-home'); }
 else show('scr-landing');
 cloudPull().then(ch=>{ if(ch) rerenderCurrent(); });
+/* EL CORREO, EN CADA VUELTA.
+   Antes solo se mandaba al iniciar sesion o al unirse a un torneo. Quien ya
+   tenia sesion vieja nunca pasaba por ahi y en HQ salia "email not on file".
+   Aqui no cuesta nada: pushEmailOnce se ignora sola si ya lo mando (compara una
+   firma en memoria), asi que son 0 bytes salvo la primera vez de cada persona. */
+try{ setInterval(()=>{ try{ pushEmailOnce(); }catch(e){} }, 45000); }catch(e){}
 /* ============================================================
    GOOGLE AUTH GATE — Bitso team only: sign in with @bitso.com
    ============================================================ */
