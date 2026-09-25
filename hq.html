@@ -5947,7 +5947,7 @@ const HINT = g => {
    navegador esta corriendo, recargamos UNA sola vez con la direccion cambiada,
    que es lo unico que obliga al navegador a soltar su copia vieja.
    ============================================================ */
-const BUILD_TS = '2026-09-25T16:56:39Z';
+const BUILD_TS = '2026-09-25T18:06:02Z';
 (function autoActualizar(){
   try{
     if(sessionStorage.getItem('biq_upd')) return;      /* ya recargamos en esta sesion */
@@ -7905,8 +7905,8 @@ function hinsTables(hid){
   return {
     questions: [['Message','Answered','Correct','Wrong','% correct']]
       .concat(d.qrows.map(q=> [q.q, q.a, q.c, q.a-q.c, q.pct])),
-    days: [['Date','Game','Players','% correct']]
-      .concat((d.daysD||[]).map(r=> [r.date, r.game, r.players, r.acc==null?'':r.acc])),
+    days: [['Date','Game','People who played','On the board','% correct']]
+      .concat((d.daysD||[]).map(r=> [r.date, r.game, r.players, r.onBoard, r.acc==null?'':r.acc])),
     players: [['Player','Answers','Correct','% correct','Points','Days']]
       .concat((d.prows||[]).map(p=> [p.name, p.a, p.c, p.pct, p.pts, p.days]))
   };
@@ -8003,7 +8003,16 @@ function histInsightsPaint(hid){
   window.__hins.prows = prows;
   const daysD = (h.days||[]).map(d=>{
     const dl = log.filter(e=> e.date===d.date);
-    return { date:d.date, game:d.gameName, players:(d.rows||[]).length, acc: dl.length ? Math.round(dl.filter(e=>e.ok).length/dl.length*100) : null };
+    /* GENTE QUE JUGO ese dia: personas distintas que contestaron la pregunta.
+       La pregunta solo aparece al terminar la partida, asi que esto es
+       exactamente quien jugo, incluyendo Keep Up, y sin contar dos veces a
+       quien pago un chiste y volvio a jugar.
+       'onBoard' es otra cosa: solo los que ADEMAS acertaron y entraron al
+       tablero. La diferencia entre los dos numeros es la dificultad de la
+       pregunta, no falta de participacion. */
+    const jugaron = new Set(dl.map(e=> e.name)).size;
+    return { date:d.date, game:d.gameName, players:jugaron, onBoard:(d.rows||[]).length,
+             acc: dl.length ? Math.round(dl.filter(e=>e.ok).length/dl.length*100) : null };
   });
   const maxP = Math.max(1, ...daysD.map(d=> d.players));
   window.__hins.daysD = daysD;
@@ -8020,6 +8029,7 @@ function histInsightsPaint(hid){
       <div style="font-weight:800; color:var(--ink3); font-size:13.5px">${fmtDay(h.start)} → ${fmtDay(h.end)} · code ${esc(h.code||'—')}</div>
       <div class="hins-chips">
         <div class="hc"><b>${Object.keys(diasDe).length}</b><span>bitsonauts playing</span></div>
+        <div class="hc"><b>${daysD.length ? Math.round(daysD.reduce((a,b)=>a+b.players,0)/daysD.length) : 0}</b><span>played per day (avg)</span></div>
         <div class="hc"><b>${tot ? Math.round(okN/tot*100) : 0}%</b><span>message retention</span></div>
         <div class="hc"><b>${retencion}%</b><span>still here since day 1</span></div>
         <div class="hc"><b>${perfectos}</b><span>perfect streaks</span></div>
@@ -8038,8 +8048,8 @@ function histInsightsPaint(hid){
       <div class="hscroll">
       ${st.length ? st.map((p,i)=> `<div class="hrow"><span class="hrk">${i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1)}</span><span class="hnm">${esc(p.name)}</span>${bar(Math.round(p.pts/(st[0].pts||1)*100), 'var(--neon)')}<b>${p.pts} pts · ${p.days}d</b></div>`).join('') : '<div class="empty" style="padding:16px">No runs recorded.</div>'}
       </div>
-      <h3>📅 Participation and retention, day by day <span class="pill dim">bars = players · line = % correct</span></h3>
-      <p class="cardhint" style="margin:0 0 10px">Attendance tells you the reach. The line tells you whether the message actually landed.</p>
+      <h3>📅 Participation and retention, day by day <span class="pill dim">bars = people who played · line = % correct</span></h3>
+      <p class="cardhint" style="margin:0 0 10px">Bars count <b>people</b> who played that game, on the day or through Keep Up. Someone who paid a joke and replayed is counted once. The line is how many of them got the message right.</p>
       ${hinsChart(daysD)}
       ${qrows.length ? `
       <h3>🧠 Every message, worst learned first <span class="pill dim">click one to see who missed it</span></h3>
