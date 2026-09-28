@@ -6351,7 +6351,7 @@ const HINT = g => {
    navegador esta corriendo, recargamos UNA sola vez con la direccion cambiada,
    que es lo unico que obliga al navegador a soltar su copia vieja.
    ============================================================ */
-const BUILD_TS = '2026-09-25T16:48:39Z';
+const BUILD_TS = '2026-09-28T15:44:58Z';
 (function autoActualizar(){
   try{
     if(sessionStorage.getItem('biq_upd')) return;      /* ya recargamos en esta sesion */
@@ -6465,7 +6465,7 @@ const Freezer = (()=>{
   }
   return { install, unfreeze, uninstall, rt:{ setTimeout: rST }, get frozen(){ return frozen; } };
 })();
-function beginGame(gid, mode, isRetry){
+function beginGame(gid, mode, isRetry, reinicios){
   const g = gameById(gid);
   /* HARD daily cap for the game of the day: 1 practice, 1 real, 1 second chance.
      Enforced here so no button, modal or console call can sneak past it. */
@@ -6473,11 +6473,12 @@ function beginGame(gid, mode, isRetry){
   const lockDay = lockT ? (lockT.days||[]).find(x=> x.date===tKey(lockT)) : null;
   const locked = (lockT && lockDay && lockDay.gameId===gid) ? daily(lockT) : null;
   if(locked){
-    if(mode==='warmup' && (locked.w>0 || locked.real || locked.realStarted)){ toast('Practice already used — one per day.'); return; }
+    /* un reinicio automatico NO es practica nueva: es la misma, continuada */
+    if(mode==='warmup' && !reinicios && (locked.w>0 || locked.real || locked.realStarted)){ toast('Practice already used — one per day.'); return; }
     if(mode!=='warmup' && !isRetry && (locked.real || locked.realStarted)){ toast('Your real run is done — one per day. 🎤 A joke buys the only replay.'); return; }
     if(isRetry && !retryResumable(lockT)){ toast('Second chance already used today.'); return; }
   }
-  run = { g, mode, score:0, final:undefined, over:false, retry:!!isRetry, cleanup:null, tLeft:g.dur||0, timerI:null, timed: g.dur>0 && hasLiveTour() };
+  run = { g, mode, score:0, final:undefined, over:false, retry:!!isRetry, cleanup:null, tLeft:g.dur||0, timerI:null, timed: g.dur>0 && hasLiveTour(), reinicios: reinicios||0, arrancoEn:0 };
   $('#ov-icon').innerHTML = ICONS[g.id];
   $('#ov-gname').textContent = g.name;
   const mt = $('#ov-mode');
@@ -6616,6 +6617,7 @@ function beginGame(gid, mode, isRetry){
     if(!run || phase === 'live') return;
     phase = 'live';
     quitarLanzadores();
+    try{ if(run) run.arrancoEn = Date.now(); }catch(e){}   /* para medir cuanto sobrevivio */
     /* NADA DE LO QUE SIGUE PUEDE IMPEDIR QUE EL JUEGO ARRANQUE.
        Antes, si reclamar el turno en la nube lanzaba un error, la funcion se
        cortaba ahi mismo: el gate no se quitaba y el Freezer nunca descongelaba,
@@ -6624,7 +6626,7 @@ function beginGame(gid, mode, isRetry){
        Ahora cada paso va aislado y el descongelado es SIEMPRE lo ultimo. */
     try{
       if(locked){
-        if(mode==='warmup') locked.w = (locked.w||0) + 1;
+        if(mode==='warmup'){ if(!reinicios) locked.w = (locked.w||0) + 1; }   /* solo la primera cuenta */
         else if(isRetry){ locked.retryStart = Date.now(); locked.retryTries = (locked.retryTries||0) + 1; }
         else { locked.realStarted = true; claimRun(); }   /* reclamo el turno del dia en la nube */
         savePlayer();
@@ -8853,6 +8855,7 @@ function finishRun(){
   try{ run.gateCleanup && run.gateCleanup(); }catch(e){}
   clearInterval(run.timerI);
   const {g, mode, retry} = run;
+  const arrancoEn = run.arrancoEn || 0, reinicios = run.reinicios || 0;
   let val = (run.final !== undefined) ? run.final : run.score;
   if(run.final === undefined && g.dnfOnTimeout) val = null;
   $('#ov').classList.add('hidden');
@@ -8861,17 +8864,37 @@ function finishRun(){
     const better = prev===undefined || (g.lowerBetter ? val<prev : val>prev);
     if(better && !(val===0 && !g.lowerBetter)){ player.best[g.id] = val; savePlayer(); }
   }
+  /* ¿SE MURIO LUEGO LUEGO EN LA PRACTICA?
+     Entonces eso no fue practicar: fue no entender todavia como se juega.
+     La reiniciamos sola, sin modal de por medio. La señal es el TIEMPO que
+     sobrevivio, no el puntaje: el puntaje no sirve porque cada juego tiene su
+     escala (la mediana de Lane Rush es 1,276 y la de Zig Zag es 1), mientras
+     que "me mori en 3 segundos" significa lo mismo en todos los juegos.
+     En cuanto aguanta unos segundos, esa ya fue su practica y se acaba. */
+  const CORTA_MS = 5000;        /* menos de 5s: ni le dio tiempo de entender */
+  const CERO_MS  = 9000;        /* si acabo en cero, un poco mas de margen */
+  const MAX_REINICIOS = 3;      /* tope: no es practica ilimitada */
+  const duro = arrancoEn ? (Date.now() - arrancoEn) : 999999;
+  const enCero = (val === 0 || val === null);
+  const muyCorta = duro < CORTA_MS || (enCero && duro < CERO_MS);
   run = null;
-  if(mode==='warmup') showWarmupDone(g, val);
+  if(mode === 'warmup' && !g.dur && muyCorta && reinicios < MAX_REINICIOS){
+    const n = reinicios + 1;
+    try{ toast(n === 1 ? 'That was quick — here, go again 🧪' : 'Practice run ' + (n+1) + ' — still nothing counts'); }catch(e){}
+    setTimeout(()=>{ try{ beginGame(g.id, 'warmup', false, n); }catch(e){} }, 420);
+    return;
+  }
+  if(mode==='warmup') showWarmupDone(g, val, reinicios);
   else showScoreScreen(g, val, retry);
 }
-function showWarmupDone(g, val){
+function showWarmupDone(g, val, reinicios){
   const disp = val===null ? 'DNF' : g.fmt(val);
   modal(`
     <div class="micon">${ICONS[g.id]}</div>
     <h2>Practice complete</h2>
     <div class="score-hero" style="font-size:56px">${disp}</div>
-    <p class="mt">That was your one practice — nothing counted, nobody saw it. The next run is <b>for real</b>: score, Bitso question, the board.</p>
+    ${reinicios ? `<div class="pill dim" style="display:inline-block; margin:0 0 10px">${reinicios+1} goes at it — now you know how it works</div>` : ''}
+    <p class="mt">That was your practice — nothing counted, nobody saw it. The next run is <b>for real</b>: score, Bitso question, the board.</p>
     <div class="mrow">
       <button class="btn ghost" onclick="closeModal(); renderArena()">Catch my breath</button>
       <button class="btn big" onclick='closeModal(); startPlay("real")'>▶ Play for real</button>
