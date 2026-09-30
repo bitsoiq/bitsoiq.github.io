@@ -3635,10 +3635,10 @@ const GAMES = [
 },
 
 /* ---- 9. ARROW HERO — piano-tiles arrows playing a real tune ---- */
-{ id:'arrows', name:'Arrow Hero', tag:'Play the song. Miss once, silence.', dur:0,
+{ id:'arrows', name:'Arrow Hero', tag:'Play the song. One free miss, then silence.', dur:0,
   unit:'notes', lowerBetter:false, fmt:v=>fmtN(v)+' notes',
   grad:'linear-gradient(160deg,#2A2550,#14122E)',
-  how:'Arrow tiles rain down four lanes while a full rock band (drums, bass + palm-muted electric guitar) drives underneath — YOU are the lead guitar. TAP THE LANE of the LOWEST tile (or press its arrow key) — there is no timing to nail, hit it whenever you want before it reaches the bottom — and every hit rips the next note of the riff over the band. The faster you clear, the faster it falls. Wrong key or a tile reaching the bottom = the band stops. Note: this is the only game that takes over the console music — it cuts out and the band plays alone.',
+  how:'Arrow tiles rain down four lanes while a full rock band (drums, bass + palm-muted electric guitar) drives underneath — YOU are the lead guitar. TAP THE LANE of the LOWEST tile (or press its arrow key) — there is no timing to nail, hit it whenever you want before it reaches the bottom, and your first wrong lane is forgiven — and every hit rips the next note of the riff over the band. The faster you clear, the faster it falls. Wrong key or a tile reaching the bottom = the band stops. Note: this is the only game that takes over the console music — it cuts out and the band plays alone.',
   run(stage, api){
     const {cv, ctx, W, H} = makeCanvas(stage, 720, 560);
     const LANES = 4, LW = W/LANES;
@@ -3765,11 +3765,27 @@ const GAMES = [
       dead = true; flash = 1; sBad(); bandStop();
       api.finish(score, 800);
     }
+    let perdonado = false, avisoMiss = 0;
     function press(idx){
       if(dead) return;
       const cur = [...tiles].sort((a,b)=> b.y - a.y)[0];
       if(!cur) return;
-      if(cur.lane !== idx) return fail();
+      if(cur.lane !== idx){
+        /* UN ERROR GRATIS, UNA SOLA VEZ POR PARTIDA.
+           Antes el primer toque equivocado mataba de inmediato: 28% de la gente
+           acababa en CERO sin anotar una sola nota, y la distribucion salia
+           partida en dos (o cero, o mas de 6) en vez de una curva. Eso no es
+           dificultad, es no haber entendido cual flecha va.
+           El primer fallo ahora solo avisa. El segundo si acaba la cancion, asi
+           que "miss once, silence" sigue siendo la identidad del juego. */
+        if(!perdonado){
+          perdonado = true; avisoMiss = 1; flash = 0.5;
+          try{ sBad(); }catch(e){}
+          try{ floatPt(stage, stage.clientWidth/2, stage.clientHeight*0.5, 'ONE FREE MISS!', '#FFD449'); }catch(e){}
+          return;
+        }
+        return fail();
+      }
       tiles = tiles.filter(t=> t!==cur);
       score++; api.set(score);
       playNote(score-1);
@@ -3840,6 +3856,12 @@ const GAMES = [
         ctx.font = '900 40px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
         ctx.fillText(GLYPH[t.lane], x+w/2, t.y+TILE/2);
       });
+      if(avisoMiss>0){
+        ctx.fillStyle = 'rgba(255,212,73,'+Math.min(.9,avisoMiss)+')';
+        ctx.font='900 20px sans-serif'; ctx.textAlign='center';
+        ctx.fillText('ONE FREE MISS USED — next one ends it', W/2, 34);
+        ctx.textAlign='left'; avisoMiss -= 0.006;
+      }
       if(flash>0){ ctx.fillStyle=`rgba(255,70,100,${flash*0.5})`; ctx.fillRect(0,0,W,H); flash-=dt*2; }
       raf = requestAnimationFrame(loop);
     }
@@ -6332,7 +6354,7 @@ const QUICK = {
   simon:   'Watch the colors flash, then repeat the sequence. One miss ends it.',
   stack:   'Tap to drop the block on the tower — the overhang gets sliced off.',
   whack:   'Bonk bears +1. Hit a bull and it’s −2. Look before you smash.',
-  arrows:  'Tap the lane of the LOWEST arrow (or press its arrow key). No timing needed. Wrong lane, or letting one reach the bottom, ends the song.',
+  arrows:  'Tap the lane of the LOWEST arrow (or press its arrow key). No timing needed. You get ONE free miss; the second wrong lane, or letting one reach the bottom, ends the song.',
   zig:     'Tap to turn 90°. Stay on the path, grab coins for +2.',
   wall:    'Tap to hop wall to wall (+1 each). Dodge the growing spikes.',
   numbers: 'Tap the balls 1 → 12 in order, fast. Clear the board for +5.',
@@ -6365,7 +6387,7 @@ const HINT = g => {
    navegador esta corriendo, recargamos UNA sola vez con la direccion cambiada,
    que es lo unico que obliga al navegador a soltar su copia vieja.
    ============================================================ */
-const BUILD_TS = '2026-09-30T15:33:57Z';
+const BUILD_TS = '2026-09-30T15:38:48Z';
 (function autoActualizar(){
   try{
     if(sessionStorage.getItem('biq_upd')) return;      /* ya recargamos en esta sesion */
