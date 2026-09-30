@@ -3638,7 +3638,7 @@ const GAMES = [
 { id:'arrows', name:'Arrow Hero', tag:'Play the song. Miss once, silence.', dur:0,
   unit:'notes', lowerBetter:false, fmt:v=>fmtN(v)+' notes',
   grad:'linear-gradient(160deg,#2A2550,#14122E)',
-  how:'Arrow tiles rain down four lanes while a full rock band (drums, bass + palm-muted electric guitar) drives underneath — YOU are the lead guitar. Press the arrow key of the LOWEST tile — any time before it hits the bottom — and every hit rips the next note of the riff over the band. The faster you clear, the faster it falls. Wrong key or a tile reaching the bottom = the band stops. Note: this is the only game that takes over the console music — it cuts out and the band plays alone.',
+  how:'Arrow tiles rain down four lanes while a full rock band (drums, bass + palm-muted electric guitar) drives underneath — YOU are the lead guitar. TAP THE LANE of the LOWEST tile (or press its arrow key) — there is no timing to nail, hit it whenever you want before it reaches the bottom — and every hit rips the next note of the riff over the band. The faster you clear, the faster it falls. Wrong key or a tile reaching the bottom = the band stops. Note: this is the only game that takes over the console music — it cuts out and the band plays alone.',
   run(stage, api){
     const {cv, ctx, W, H} = makeCanvas(stage, 720, 560);
     const LANES = 4, LW = W/LANES;
@@ -3781,6 +3781,20 @@ const GAMES = [
       e.preventDefault(); press(idx);
     };
     window.addEventListener('keydown', onKey);
+    /* ====== SE PUEDE TOCAR ======
+       Este juego SOLO escuchaba el teclado. En celular y tablet era
+       literalmente imposible de jugar: no habia manera de meter una entrada, y
+       la flecha llegaba al fondo sola. Todos esos terminaban en cero.
+       Ahora cada carril es un boton: tocas el carril de la flecha mas baja.
+       Funciona con dedo, con mouse y con lapiz, y el teclado sigue igual. */
+    const onTap = e=>{
+      if(dead) return;
+      const q = ptr(cv, e);
+      const idx = clamp(Math.floor(q.x / LW), 0, LANES-1);
+      press(idx);
+    };
+    cv.addEventListener('pointerdown', onTap);
+    cv.style.touchAction = 'none';
     function loop(now){
       const dt = Math.max(0, Math.min(0.05,(now-lastT)/1000)); lastT = now;
       if(!dead){
@@ -3831,7 +3845,7 @@ const GAMES = [
     }
     raf = requestAnimationFrame(loop);
     return ()=>{
-      cancelAnimationFrame(raf); window.removeEventListener('keydown', onKey);
+      cancelAnimationFrame(raf); window.removeEventListener('keydown', onKey); cv.removeEventListener('pointerdown', onTap);
       bandStop();
       if(typeof bgmDuck === 'function') bgmDuck(1);
     };
@@ -6318,7 +6332,7 @@ const QUICK = {
   simon:   'Watch the colors flash, then repeat the sequence. One miss ends it.',
   stack:   'Tap to drop the block on the tower — the overhang gets sliced off.',
   whack:   'Bonk bears +1. Hit a bull and it’s −2. Look before you smash.',
-  arrows:  'Press ← ↑ ↓ → exactly when each arrow crosses the line. One miss = silence.',
+  arrows:  'Tap the lane of the LOWEST arrow (or press its arrow key). No timing needed. Wrong lane, or letting one reach the bottom, ends the song.',
   zig:     'Tap to turn 90°. Stay on the path, grab coins for +2.',
   wall:    'Tap to hop wall to wall (+1 each). Dodge the growing spikes.',
   numbers: 'Tap the balls 1 → 12 in order, fast. Clear the board for +5.',
@@ -6333,7 +6347,7 @@ const QUICK = {
 };
 const quickHow = g => QUICK[g.id] || ((g.how||'').split('. ')[0] + '.') || g.tag || '';
 const HINT = g => {
-  const K = { lane:'PRESS ← OR → TO START', arrows:'PRESS ANY ARROW TO START', jaywalk:'TAP OR PRESS ↑ TO START',
+  const K = { lane:'PRESS ← OR → TO START', arrows:'TAP A LANE OR PRESS AN ARROW KEY', jaywalk:'TAP OR PRESS ↑ TO START',
               ball:'TAP TO START, THEN MOVE YOUR MOUSE LEFT AND RIGHT', hopper:'TAP TO START, THEN FOLLOW WITH YOUR MOUSE',
               blade:'TAP TO START, THEN BALANCE WITH YOUR MOUSE', catch:'TAP TO START, THEN SLIDE THE BASKET' };
   return '👆 ' + (K[g.id] || 'TAP OR PRESS ANY KEY TO START');
@@ -6351,7 +6365,7 @@ const HINT = g => {
    navegador esta corriendo, recargamos UNA sola vez con la direccion cambiada,
    que es lo unico que obliga al navegador a soltar su copia vieja.
    ============================================================ */
-const BUILD_TS = '2026-09-28T15:44:58Z';
+const BUILD_TS = '2026-09-30T15:33:57Z';
 (function autoActualizar(){
   try{
     if(sessionStorage.getItem('biq_upd')) return;      /* ya recargamos en esta sesion */
