@@ -3346,18 +3346,31 @@ const GAMES = [
       };
       grid.appendChild(el);
     });
-    /* 2-second sneak peek: all cards face-up, then flip down and start the clock */
+    /* 2-second sneak peek: all cards face-up, then flip down and start the clock.
+       Va con reloj VIRTUAL (performance.now + rAF): mientras el Freezer tiene el
+       tiempo congelado (3-2-1 y espera del primer toque) NO avanza, y arranca
+       completo cuando el jugador toca. Con setTimeout, los avisos vencian durante
+       la congelacion y al descongelar se ejecutaban todos de golpe: la muestra
+       de 2s se perdia y las cartas quedaban bloqueadas. */
     const cards = [...grid.children];
-    timers.push(setTimeout(()=> cards.forEach(c=> c.classList.add('flip')), 150));
-    timers.push(setTimeout(()=>{
-      cards.forEach(c=> c.classList.remove('flip'));
-      timers.push(setTimeout(()=>{
-        lock = false;
+    let dead = false, stepN = 0, tStart = null;
+    const raf = window.requestAnimationFrame.bind(window);
+    function loop(now){
+      if(dead) return;
+      if(tStart === null) tStart = now;
+      const el = now - tStart;
+      if(stepN === 0 && el >= 150){ stepN = 1; cards.forEach(c=> c.classList.add('flip')); }
+      if(stepN === 1 && el >= 2150){ stepN = 2; cards.forEach(c=> c.classList.remove('flip')); }
+      if(stepN === 2 && el >= 2530){
+        stepN = 3; lock = false; open = [];
         t0 = performance.now();
         tick = setInterval(()=> api.set(Math.round((performance.now()-t0)/100)/10), 100);
-      }, 380));
-    }, 2150));
-    return ()=>{ clearInterval(tick); timers.forEach(clearTimeout); };
+        return;
+      }
+      raf(loop);
+    }
+    raf(loop);
+    return ()=>{ dead = true; clearInterval(tick); timers.forEach(clearTimeout); };
   }
 },
 
@@ -6387,7 +6400,7 @@ const HINT = g => {
    navegador esta corriendo, recargamos UNA sola vez con la direccion cambiada,
    que es lo unico que obliga al navegador a soltar su copia vieja.
    ============================================================ */
-const BUILD_TS = '2026-09-30T15:38:48Z';
+const BUILD_TS = '2026-10-06T15:01:21Z';
 (function autoActualizar(){
   try{
     if(sessionStorage.getItem('biq_upd')) return;      /* ya recargamos en esta sesion */
