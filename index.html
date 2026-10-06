@@ -2148,7 +2148,12 @@ function cloudRecomputeStreaks(){
 const SYNC_LS = 'bitsoiq_sync';
 /* Subele 1 cada vez que un arreglo necesite que TODOS vuelvan a bajar limpio.
    2 = arreglo de la marca de agua que dejaba huecos en el tablero de Today. */
-const SYNC_FIX = 2;
+const SYNC_FIX = 3;
+/* 3 = el log de trivia podia quedar con huecos en algunos dispositivos (por
+   ejemplo sin las respuestas del 15 de sept). Como la racha y el bono Diamond
+   Hands se calculan con ese log, cada quien veia puntos y rachas distintos.
+   Se vuelve a bajar completo, una vez, y ademas ahora cada sincronizacion
+   re-pide un traslape de filas para que no vuelva a pasar. */
 function daysFingerprint(){
   /* huella corta del calendario que tenemos en este dispositivo:
      cuántos días, cuáles fechas y qué juego lleva cada una */
@@ -2188,6 +2193,7 @@ function syncLoad(){
          costaria megas de mas. */
       if(o.fix !== SYNC_FIX){
         o.stamp = ''; o.resAt = ''; o.chatTs = 0; o.slowAt = 0;
+        if((o.fix||0) < 3) o.trivId = 0;     /* re-bajar el log de trivia completo, una vez */
         o.fix = SYNC_FIX;
       }
       return o;
@@ -2452,7 +2458,7 @@ async function cloudPull(){
     if(slow){
       const [customs, trivia] = await Promise.all([
         get('custom_games?select=*'),
-        getCursor(c => 'trivia_log?select=*&id=gt.' + (c||0) + '&order=id.asc&limit=' + PAGINA, 'id', (CLOUD.m.trivId||0))
+        getCursor(c => 'trivia_log?select=id,tid,date,name,qid,ok,ts&id=gt.' + (c||0) + '&order=id.asc&limit=' + PAGINA, 'id', Math.max(0, (CLOUD.m.trivId||0) - 150))   /* traslape: una fila con id menor que llega tarde ya no se pierde */
       ]);
       if(!CLOUD.admin && customs.length && JSON.stringify(customs.map(c=>c.data)) !== JSON.stringify(state.customGames||[])){
         state.customGames = customs.map(c=> c.data).filter(Boolean); changed = true;
@@ -6400,7 +6406,7 @@ const HINT = g => {
    navegador esta corriendo, recargamos UNA sola vez con la direccion cambiada,
    que es lo unico que obliga al navegador a soltar su copia vieja.
    ============================================================ */
-const BUILD_TS = '2026-10-06T15:01:21Z';
+const BUILD_TS = '2026-10-06T19:31:51Z';
 (function autoActualizar(){
   try{
     if(sessionStorage.getItem('biq_upd')) return;      /* ya recargamos en esta sesion */
